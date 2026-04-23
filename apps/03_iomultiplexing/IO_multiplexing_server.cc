@@ -1,5 +1,6 @@
 #include <dirent.h>
 #include <iostream>
+#include <map>
 #include <memory>
 #include <signal.h>
 #include <stack>
