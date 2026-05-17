@@ -170,6 +170,9 @@ void Server::handle_client(std::unique_ptr<Socket> client_sock)
 {
     char buffer[1024] = {0};
 
+    HttpReqBuilder req_builder(*router_, client_sock->fd(), logger_);
+    HttpParser     parser(&req_builder);
+
     while (true)
     {
         ssize_t nread = ::recv(client_sock->fd(), buffer, sizeof(buffer), 0);
@@ -178,8 +181,6 @@ void Server::handle_client(std::unique_ptr<Socket> client_sock)
         {
             std::string msg(buffer, static_cast<size_t>(nread));
             logger_->debug("Received message: [{}]", msg);
-            HttpReqBuilder req_builder(*router_, client_sock->fd(), logger_);
-            HttpParser     parser(&req_builder);
 
             parser.feed(msg.data(), msg.size());
             if (req_builder.isDone())
@@ -214,6 +215,12 @@ std::unique_ptr<Router> Server::register_router(std::string& dir)
 {
     std::vector<std::string> html_files = get_html_files_recursively(dir);
     std::unique_ptr<Router>  router(new Router());
+
+    router->addRoute(HttpMethod::POST,
+                     "/api/image/process",
+                     [this]()
+                     { return std::unique_ptr<RequestHandler>(new ImageProcessHandler(logger_)); });
+
     router->addRoute(HttpMethod::GET,
                      "/",
                      [dir, this]() {

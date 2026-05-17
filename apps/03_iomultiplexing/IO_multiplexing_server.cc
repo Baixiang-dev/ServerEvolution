@@ -332,6 +332,12 @@ std::unique_ptr<Router> Server::register_router(std::string& dir)
 {
     std::vector<std::string> html_files = get_html_files_recursively(dir);
     std::unique_ptr<Router>  router(new Router());
+
+    router->addRoute(HttpMethod::POST,
+                     "/api/image/process",
+                     [this]()
+                     { return std::unique_ptr<RequestHandler>(new ImageProcessHandler(logger_)); });
+
     router->addRoute(HttpMethod::GET,
                      "/",
                      [dir, this]() {
