@@ -1,9 +1,459 @@
 <!DOCTYPE html>
-<html>
+<html lang="zh-cn">
+
 <head>
-    <title>示例页面</title>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>细胞检测与分类</title>
+    <style>
+        :root {
+            --primary: #292524;
+            --primary-active: #0c0a09;
+            --ink: #0c0a09;
+            --body: #4e4e4e;
+            --muted: #777169;
+            --muted-soft: #a8a29e;
+
+            --hairline: #e7e5e4;
+            --hairline-soft: #f0efed;
+            --hairline-strong: #d6d3d1;
+
+            --canvas: #f5f5f5;
+            --canvas-soft: #fafafa;
+            --surface-card: #ffffff;
+
+            --r-xl: 16px;
+            --r-xxl: 24px;
+            --r-pill: 9999px;
+
+            --space-xs: 8px;
+            --space-sm: 12px;
+            --space-base: 16px;
+            --space-lg: 24px;
+            --space-xl: 32px;
+            --space-xxl: 48px;
+
+            --shadow-card: 0 1px 0 rgba(12, 10, 9, 0.04);
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            color: var(--ink);
+            background: var(--canvas);
+            font-family: 'Inter', system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell,
+                'Helvetica Neue', Arial, 'Noto Sans', 'Apple Color Emoji', 'Segoe UI Emoji';
+        }
+
+        .app {
+            min-height: 100vh;
+            position: relative;
+            overflow: hidden;
+            display: grid;
+            grid-template-rows: auto 1fr auto;
+        }
+
+        .orbs {
+            position: absolute;
+            inset: -40vh -30vw auto -30vw;
+            height: 80vh;
+            pointer-events: none;
+            background:
+                radial-gradient(closest-side at 25% 35%, rgba(167, 229, 211, 0.55), rgba(167, 229, 211, 0) 70%),
+                radial-gradient(closest-side at 55% 25%, rgba(244, 197, 168, 0.55), rgba(244, 197, 168, 0) 70%),
+                radial-gradient(closest-side at 70% 55%, rgba(200, 184, 224, 0.55), rgba(200, 184, 224, 0) 70%),
+                radial-gradient(closest-side at 35% 70%, rgba(168, 200, 232, 0.55), rgba(168, 200, 232, 0) 70%);
+            filter: blur(42px);
+            opacity: 0.9;
+        }
+
+        .shell {
+            position: relative;
+            width: min(1040px, 100%);
+            margin: 0 auto;
+            padding: 0 var(--space-lg);
+        }
+
+        header {
+            padding-top: var(--space-xxl);
+            padding-bottom: var(--space-lg);
+            text-align: center;
+        }
+
+        .title {
+            margin: 0 0 var(--space-xs) 0;
+            font-family: 'Waldenburg', 'Times New Roman', serif;
+            font-weight: 300;
+            letter-spacing: -0.6px;
+            font-size: 40px;
+            line-height: 1.17;
+        }
+
+        .subtitle {
+            margin: 0 auto;
+            max-width: 72ch;
+            color: var(--muted);
+            font-size: 15px;
+            line-height: 1.47;
+        }
+
+        main {
+            display: grid;
+            place-items: center;
+            padding: var(--space-lg) 0;
+        }
+
+        .stage {
+            width: min(920px, 100%);
+            background: rgba(255, 255, 255, 0.72);
+            border: 1px solid var(--hairline);
+            border-radius: var(--r-xxl);
+            box-shadow: var(--shadow-card);
+            padding: var(--space-xl);
+            backdrop-filter: blur(10px);
+        }
+
+        .pick {
+            width: 100%;
+            min-height: 360px;
+            border: 1px solid var(--hairline-strong);
+            border-radius: var(--r-xxl);
+            background: var(--canvas-soft);
+            display: grid;
+            place-items: center;
+            text-align: center;
+            padding: var(--space-xl);
+        }
+
+        .pickBtn {
+            appearance: none;
+            border: 1px solid var(--hairline);
+            background: var(--surface-card);
+            border-radius: var(--r-xxl);
+            width: min(520px, 100%);
+            height: 260px;
+            cursor: pointer;
+            display: grid;
+            place-items: center;
+            box-shadow: var(--shadow-card);
+        }
+
+        .plus {
+            font-family: 'Waldenburg', 'Times New Roman', serif;
+            font-weight: 300;
+            font-size: 56px;
+            line-height: 1;
+            color: var(--ink);
+            margin-bottom: var(--space-xs);
+        }
+
+        .pickText {
+            font-size: 16px;
+            font-weight: 500;
+            color: var(--ink);
+            margin: 0;
+        }
+
+        .pickHint {
+            margin: var(--space-xs) 0 0 0;
+            font-size: 14px;
+            color: var(--muted-soft);
+        }
+
+        .preview {
+            display: grid;
+            gap: var(--space-sm);
+        }
+
+        .previewImg {
+            width: 100%;
+            height: auto;
+            display: block;
+            border-radius: 12px;
+            background: #fff;
+            border: 1px solid var(--hairline-strong);
+        }
+
+        .metaRow {
+            display: flex;
+            justify-content: space-between;
+            gap: var(--space-sm);
+            color: var(--muted-soft);
+            font-size: 13px;
+            overflow: hidden;
+        }
+
+        .status {
+            margin-top: var(--space-base);
+            color: var(--body);
+            font-size: 14px;
+            line-height: 1.5;
+            min-height: 21px;
+        }
+
+        .compare {
+            margin-top: var(--space-xl);
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: var(--space-lg);
+        }
+
+        @media (min-width: 860px) {
+            .compare {
+                grid-template-columns: 1fr 1fr;
+            }
+        }
+
+        .imageCard {
+            background: var(--canvas-soft);
+            border: 1px solid var(--hairline-soft);
+            border-radius: var(--r-xl);
+            padding: var(--space-base);
+        }
+
+        .imageHead {
+            display: flex;
+            align-items: baseline;
+            justify-content: space-between;
+            gap: var(--space-sm);
+            margin-bottom: var(--space-sm);
+        }
+
+        .imageTitle {
+            margin: 0;
+            font-size: 12px;
+            font-weight: 600;
+            letter-spacing: 0.96px;
+            text-transform: uppercase;
+            color: var(--muted);
+        }
+
+        .imageMeta {
+            margin: 0;
+            font-size: 13px;
+            color: var(--muted-soft);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 55%;
+        }
+
+        footer {
+            padding: var(--space-lg) 0 var(--space-xxl);
+        }
+
+        .footerInner {
+            display: grid;
+            place-items: center;
+            gap: var(--space-sm);
+        }
+
+        .confirmBtn {
+            appearance: none;
+            border: 1px solid transparent;
+            border-radius: var(--r-pill);
+            height: 48px;
+            padding: 12px 28px;
+            font-size: 16px;
+            font-weight: 500;
+            cursor: pointer;
+            background: var(--primary);
+            color: #fff;
+            min-width: 220px;
+        }
+
+        .confirmBtn:active {
+            background: var(--primary-active);
+        }
+
+        .confirmBtn:disabled {
+            cursor: not-allowed;
+            opacity: 0.55;
+        }
+
+        .hidden {
+            display: none;
+        }
+    </style>
 </head>
+
 <body>
-    <h1>Hello World</h1>
+    <div class="app">
+        <div class="orbs" aria-hidden="true"></div>
+
+        <header class="shell">
+            <h1 class="title">细胞检测与分类</h1>
+            <p class="subtitle">
+                选择一张显微图像。点击“确认上传”后，服务器将调用训练模型检测细胞并标注类别，返回标注后的结果图。
+            </p>
+        </header>
+
+        <main class="shell">
+            <section class="stage" aria-label="上传与预览">
+                <div id="pickArea" class="pick">
+                    <button id="pickBtn" class="pickBtn" type="button" aria-label="选择图片">
+                        <div>
+                            <div class="plus">+</div>
+                            <p class="pickText">选择图片</p>
+                            <p class="pickHint">PNG / JPG / GIF / WEBP（建议 &lt; 10MB）</p>
+                        </div>
+                    </button>
+                </div>
+
+                <div id="previewArea" class="preview hidden">
+                    <img id="previewImg" class="previewImg" alt="已选择的细胞图像预览" />
+                    <div class="metaRow">
+                        <span id="fileName"></span>
+                        <span id="fileSize"></span>
+                    </div>
+                </div>
+
+                <input id="fileInput" class="hidden" type="file" accept="image/*" />
+                <div id="status" class="status" role="status" aria-live="polite"></div>
+
+                <div id="compare" class="compare hidden" aria-label="对比结果">
+                    <article class="imageCard">
+                        <div class="imageHead">
+                            <p class="imageTitle">原始图像</p>
+                            <p id="origMeta" class="imageMeta"></p>
+                        </div>
+                        <img id="originalImg" class="previewImg" alt="用户上传的原始图像" />
+                    </article>
+
+                    <article class="imageCard">
+                        <div class="imageHead">
+                            <p class="imageTitle">标注结果</p>
+                            <p id="procMeta" class="imageMeta"></p>
+                        </div>
+                        <img id="processedImg" class="previewImg" alt="服务器返回的标注结果图像" />
+                    </article>
+                </div>
+            </section>
+        </main>
+
+        <footer class="shell">
+            <div class="footerInner">
+                <button id="uploadBtn" class="confirmBtn" type="button" disabled>确认上传</button>
+            </div>
+        </footer>
+    </div>
+
+    <script>
+        (function () {
+            const API_BASE = 'http://172.18.198.171:7788'
+            const pickBtn = document.getElementById('pickBtn');
+            const fileInput = document.getElementById('fileInput');
+
+            const pickArea = document.getElementById('pickArea');
+            const previewArea = document.getElementById('previewArea');
+            const previewImg = document.getElementById('previewImg');
+            const fileNameEl = document.getElementById('fileName');
+            const fileSizeEl = document.getElementById('fileSize');
+
+            const statusEl = document.getElementById('status');
+            const uploadBtn = document.getElementById('uploadBtn');
+
+            const compareEl = document.getElementById('compare');
+            const originalImg = document.getElementById('originalImg');
+            const processedImg = document.getElementById('processedImg');
+            const origMeta = document.getElementById('origMeta');
+            const procMeta = document.getElementById('procMeta');
+
+            let selectedFile = null;
+            let originalUrl = null;
+            let processedUrl = null;
+
+            function setStatus(text) {
+                statusEl.textContent = text || '';
+            }
+
+            function resetUrls() {
+                if (originalUrl) URL.revokeObjectURL(originalUrl);
+                if (processedUrl) URL.revokeObjectURL(processedUrl);
+                originalUrl = null;
+                processedUrl = null;
+            }
+
+            function bytesToKB(bytes) {
+                return (bytes / 1024).toFixed(1) + ' KB';
+            }
+
+            pickBtn.addEventListener('click', () => {
+                fileInput.value = '';
+                fileInput.click();
+            });
+
+            fileInput.addEventListener('change', () => {
+                const file = fileInput.files && fileInput.files[0];
+                if (!file) return;
+
+                resetUrls();
+                compareEl.classList.add('hidden');
+                setStatus('');
+
+                if (!file.type || !file.type.startsWith('image/')) {
+                    selectedFile = null;
+                    uploadBtn.disabled = true;
+                    setStatus('请选择图片文件。');
+                    return;
+                }
+
+                if (file.size > 10 * 1024 * 1024) {
+                    selectedFile = null;
+                    uploadBtn.disabled = true;
+                    setStatus('图片过大（> 10MB），请换一张更小的图片。');
+                    return;
+                }
+
+                selectedFile = file;
+                uploadBtn.disabled = false;
+
+                originalUrl = URL.createObjectURL(file);
+
+                // 中央区域：用预览替代“+ 选择图片”按钮
+                pickArea.classList.add('hidden');
+                previewArea.classList.remove('hidden');
+
+                previewImg.src = originalUrl;
+                fileNameEl.textContent = file.name;
+                fileSizeEl.textContent = bytesToKB(file.size);
+
+                // 对比区的“原始图像”也用同一张
+                originalImg.src = originalUrl;
+                origMeta.textContent = `${file.name} · ${bytesToKB(file.size)}`;
+            });
+
+            uploadBtn.addEventListener('click', async () => {
+                if (!selectedFile) return;
+
+                setStatus('上传中…');
+
+                try {
+                    const resp = await fetch(`${API_BASE}/api/image/process`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': selectedFile.type || 'application/octet-stream' },
+                        body: selectedFile
+                    });
+
+                    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+
+                    const blob = await resp.blob();
+                    processedUrl = URL.createObjectURL(blob);
+
+                    processedImg.src = processedUrl;
+                    procMeta.textContent = `${blob.type || 'image'} · ${bytesToKB(blob.size)}`;
+
+                    compareEl.classList.remove('hidden');
+                    setStatus('完成。');
+                } catch (e) {
+                    setStatus(`上传失败：${e && e.message ? e.message : '未知错误'}`);
+                }
+            });
+        })();
+    </script>
 </body>
+
 </html>
