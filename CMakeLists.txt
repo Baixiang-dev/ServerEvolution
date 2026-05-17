@@ -34,6 +34,12 @@ add_library(project_options INTERFACE)
 target_compile_options(project_options INTERFACE -Wall -Wextra)
 target_link_libraries(project_options INTERFACE Threads::Threads)
 
+# spdlog 在 compiled-lib 模式下会受编译期宏 SPDLOG_ACTIVE_LEVEL 影响：
+# 如果不显式设置，debug/trace 级别的日志可能直接被编译裁剪掉。
+# target_compile_definitions(project_options INTERFACE
+#   $<$<CONFIG:Debug>:SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG>
+# )
+
 # 如果当前配置是Debug，添加 ASAN 选项
 if(ENABLE_ASAN)
   target_compile_options(project_options INTERFACE

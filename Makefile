@@ -3,7 +3,7 @@ CXX ?= g++
 # ========== Build mode ==========
 MODE ?= debug
 
-COMMON_FLAGS := -std=c++11 -Wall -Wextra -Ithird_party -Isrc -pthread
+COMMON_FLAGS := -std=c++11 -Wall -Wextra -Ithird_party -Ithird_party/spdlog/include -Isrc -pthread
 
 ifeq ($(MODE),release)
 	CXXFLAGS := $(COMMON_FLAGS) -O3 -DNDEBUG
