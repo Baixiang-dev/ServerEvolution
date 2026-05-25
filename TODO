@@ -1,0 +1,2 @@
+1. 更新 readme.md，添加项目目录说明
+2. 修复 IO 多路复用 bug，HttpBuilder 在非阻塞的Socket, 使用阻塞的send 
