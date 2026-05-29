@@ -98,6 +98,10 @@ add_server_app(IO_multiplexing_server
   "apps/03_iomultiplexing/IO_multiplexing_server.cc"
   "03_iomultiplexing"
 )
+add_server_app(reactor_server
+  "apps/04_reactor/reactor_server.cc"
+  "04_reactor"
+)
 
 add_custom_target(apps
   DEPENDS Iterative_server multithread_server threadpool_server IO_multiplexing_server
