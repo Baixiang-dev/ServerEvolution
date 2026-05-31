@@ -9,6 +9,16 @@
 
 #include "http/router/HttpRouter.h"
 
+#include <cstdlib>
+#include <chrono>
+#include <iomanip>
+#include <sstream>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <unistd.h>
+#include <errno.h>
+#include <limits.h>
+
 // html文件处理器
 class HtmlFileHandler : public RequestHandler
 {
@@ -132,16 +142,170 @@ public:
             content_type = sniff_image_mime(body_);
         }
 
-        // Minimal "processing": echo back the bytes.
-        response_.status_code = 200;
-        response_.status_message = "OK";
-        response_.headers["Content-Type"] =
-            content_type.empty() ? "application/octet-stream" : content_type;
-        response_.headers["Cache-Control"] = "no-store";
-        response_.headers["X-Image-Processed"] = "1";
-        response_.headers["Connection"] = "close";
-        response_.body = std::move(body_);
-        response_.headers["Content-Length"] = std::to_string(response_.body.size());
+        // Save uploaded image to disk, check cache, run inference if needed, then return result.
+        // Directories - adjust paths as needed.
+        const std::string upload_dir = "web_root/uploads";
+        const std::string result_dir = "web_root/processed";
+
+        auto mkdir_p = [](const std::string& path) -> bool {
+            std::string current;
+            for (size_t i = 0; i < path.size(); ++i)
+            {
+                current.push_back(path[i]);
+                if (path[i] == '/')
+                {
+                    if (current.empty())
+                        continue;
+                    if (mkdir(current.c_str(), 0755) != 0 && errno != EEXIST)
+                        return false;
+                }
+            }
+            if (!current.empty())
+            {
+                if (mkdir(current.c_str(), 0755) != 0 && errno != EEXIST)
+                    return false;
+            }
+            return true;
+        };
+
+        if (!mkdir_p(upload_dir) || !mkdir_p(result_dir))
+        {
+            logger_->error("Failed to create upload/result directories");
+        }
+
+        // Determine filename: prefer header X-Filename, otherwise generate one.
+        std::string filename = get_header_value_ci(request_ ? request_->headers : Headers{}, "X-Filename");
+        if (filename.empty())
+        {
+            std::string ext = ".bin";
+            if (content_type == "image/png")
+                ext = ".png";
+            else if (content_type == "image/jpeg")
+                ext = ".jpg";
+            else if (content_type == "image/gif")
+                ext = ".gif";
+            else if (content_type == "image/webp")
+                ext = ".webp";
+
+            auto now = std::chrono::system_clock::now();
+            auto t = std::chrono::system_clock::to_time_t(now);
+            std::ostringstream oss;
+            oss << "upload_" << t << ext;
+            filename = oss.str();
+        }
+
+        std::string upload_path = upload_dir + "/" + filename;
+        std::string result_path = result_dir + "/" + filename;
+
+        // If result already exists, return it (cache hit).
+        if (access(result_path.c_str(), F_OK) == 0)
+        {
+            std::ifstream in(result_path.c_str(), std::ios::binary);
+            if (in)
+            {
+                std::string out;
+                in.seekg(0, std::ios::end);
+                out.resize((size_t)in.tellg());
+                in.seekg(0, std::ios::beg);
+                in.read(&out[0], out.size());
+
+                response_.status_code = 200;
+                response_.status_message = "OK";
+                response_.headers["Content-Type"] = content_type.empty() ? "application/octet-stream" : content_type;
+                response_.headers["Cache-Control"] = "no-store";
+                response_.headers["X-Image-Processed"] = "1";
+                response_.headers["Connection"] = "close";
+                response_.body = std::move(out);
+                response_.headers["Content-Length"] = std::to_string(response_.body.size());
+                return;
+            }
+            else
+            {
+                // If unable to read cached file, continue to re-run inference.
+                logger_->warn("Cached result exists but cannot be read: {}", result_path);
+            }
+        }
+
+        // Save upload to disk
+        {
+            std::ofstream out(upload_path.c_str(), std::ios::binary);
+            if (!out)
+            {
+                response_.status_code = 500;
+                response_.status_message = "Internal Server Error";
+                response_.headers["Content-Length"] = "0";
+                logger_->error("Failed to write uploaded file: {}", upload_path);
+                return;
+            }
+            out.write(body_.data(), static_cast<std::streamsize>(body_.size()));
+            out.close();
+        }
+
+        // Run inference: activate conda env and run visual.py with input and output dir.
+        // Use `conda run` for non-interactive activation if available; fall back to plain python.
+        std::string project_root = "."; // default to cwd; adjust if needed
+        std::string script_path = project_root + "/visual.py";
+
+        std::ostringstream cmd;
+        // Prefer conda run which does not require shell init.
+        cmd << "conda run -n mmdet_lww python '" << script_path << "' '" << upload_path << "' '" << result_dir << "'";
+
+        int rc = std::system(cmd.str().c_str());
+        if (rc != 0)
+        {
+            logger_->error("Inference command failed (rc={}): {}", rc, cmd.str());
+            // Try alternate: attempt to run python directly (assumes env is already set up)
+            std::ostringstream alt;
+            alt << "python '" << script_path << "' '" << upload_path << "' '" << result_dir << "'";
+            rc = std::system(alt.str().c_str());
+            if (rc != 0)
+            {
+                logger_->error("Alternate inference command failed (rc={}): {}", rc, alt.str());
+                response_.status_code = 500;
+                response_.status_message = "Internal Server Error";
+                response_.headers["Content-Length"] = "0";
+                response_.headers["Connection"] = "close";
+                return;
+            }
+        }
+
+        // After inference, expect result file to exist
+        if (access(result_path.c_str(), F_OK) != 0)
+        {
+            logger_->error("Inference finished but result not found: {}", result_path);
+            response_.status_code = 500;
+            response_.status_message = "Internal Server Error";
+            response_.headers["Content-Length"] = "0";
+            response_.headers["Connection"] = "close";
+            return;
+        }
+
+        // Read result and return
+        {
+            std::ifstream in(result_path.c_str(), std::ios::binary);
+            if (!in)
+            {
+                response_.status_code = 500;
+                response_.status_message = "Internal Server Error";
+                response_.headers["Content-Length"] = "0";
+                response_.headers["Connection"] = "close";
+                return;
+            }
+            std::string out;
+            in.seekg(0, std::ios::end);
+            out.resize((size_t)in.tellg());
+            in.seekg(0, std::ios::beg);
+            in.read(&out[0], out.size());
+
+            response_.status_code = 200;
+            response_.status_message = "OK";
+            response_.headers["Content-Type"] = content_type.empty() ? "application/octet-stream" : content_type;
+            response_.headers["Cache-Control"] = "no-store";
+            response_.headers["X-Image-Processed"] = "1";
+            response_.headers["Connection"] = "close";
+            response_.body = std::move(out);
+            response_.headers["Content-Length"] = std::to_string(response_.body.size());
+        }
     }
 
     HttpResponse&& takeResponse() override { return std::move(response_); }
