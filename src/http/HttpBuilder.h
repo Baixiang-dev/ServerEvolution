@@ -175,6 +175,18 @@ private:
             ssize_t sent = ::send(client_sock, data + total_sent, to_send - total_sent, 0);
             if (sent <= 0)
             {
+                if (errno == EAGAIN || errno == EWOULDBLOCK)
+                {
+                    logger_->warn("send would block, busy polling...");
+                    continue;   // 内核缓冲区满，忙轮询等待可写
+                }
+    
+                if (errno == EINTR)
+                {
+                    logger_->warn("send interrupted by signal, retrying...");
+                    continue;   // 被信号中断，重试
+                }
+
                 logger_->error("send failed: {}", std::strerror(errno));
                 return;
             }
