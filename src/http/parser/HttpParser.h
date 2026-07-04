@@ -44,17 +44,17 @@ private:
         COMPLETE,              // 解析完成
         ERROR                  // 解析出错
     };
-    ParserState state = ParserState::REQUEST_LINE;   // 解析状态, 初始状态为解析请求行
-    std::string buffer;                              // 存储接收到的数据
-    size_t      contentLength = 0;                   // 请求体长度
-    size_t      bodyBytesRead = 0;                   // 已读取的请求体字节数
-    std::string method;                              // HTTP方法
-    std::string uri;                                 // 请求URI
-    std::string version;                             // HTTP版本
-    Headers     headers;                             // 请求头集合
-    HttpParserCallback* callback_ = nullptr;         // 回调接口指针
-    std::string         error_message;               // 错误信息
-    int                 error_code = 0;              // 错误代码
+    ParserState         state = ParserState::REQUEST_LINE;   // 解析状态, 初始状态为解析请求行
+    std::string         buffer;                              // 存储接收到的数据
+    size_t              contentLength = 0;                   // 请求体长度
+    size_t              bodyBytesRead = 0;                   // 已读取的请求体字节数
+    std::string         method;                              // HTTP方法
+    std::string         uri;                                 // 请求URI
+    std::string         version;                             // HTTP版本
+    Headers             headers;                             // 请求头集合
+    HttpParserCallback* callback_ = nullptr;                 // 回调接口指针
+    std::string         error_message;                       // 错误信息
+    int                 error_code = 0;                      // 错误代码
     bool                parseRequestLine();
     bool                parseHeaders();
     bool                parseBody();
@@ -221,7 +221,7 @@ bool HttpParser::parseHeaders()
             }
             else
             {
-                state = ParserState::COMPLETE;   // 如果没有请求体，直接进入完成状态
+                state = ParserState::COMPLETE;    // 如果没有请求体，直接进入完成状态
                 callback_->onMessageComplete();   // 调用消息完成回调
             }
             return true;   // 状态已改变，返回 true 让 feed 循环继续处理后续数据

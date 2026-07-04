@@ -3,3 +3,4 @@ logs/
 .vscode/
 build/
 results/
+internal_docs/
