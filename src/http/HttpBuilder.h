@@ -23,8 +23,7 @@ public:
     {
     }
 
-    void onRequestLine(const std::string& method, const std::string& path,
-                       const std::string& version) override
+    void onRequestLine(const std::string& method, const std::string& path, const std::string& version) override
     {
         version_ = version;
         if (method == "GET")
@@ -47,10 +46,7 @@ public:
         req_.path = path;
     }
 
-    void onHeader(const std::string& name, const std::string& value) override
-    {
-        req_.headers[name] = value;
-    }
+    void onHeader(const std::string& name, const std::string& value) override { req_.headers[name] = value; }
 
     void onHeadersComplete() override
     {
@@ -59,10 +55,7 @@ public:
         {
             // 404 处理
             logger_->debug("[404] Not Found: {}", req_.path);
-            send_response(
-                client_sock_,
-                HttpResponse{
-                    404, "Not Found", {{"Content-Length", "0"}, {"Connection", "close"}}, ""});
+            send_response(client_sock_, HttpResponse{404, "Not Found", {{"Content-Length", "0"}, {"Connection", "close"}}, ""});
             done_ = true;   // 标记结束
             return;
         }
@@ -91,10 +84,7 @@ public:
     void onError(int code) override
     {
         logger_->error("Parser Error: {}", code);
-        send_response(
-            client_sock_,
-            HttpResponse{
-                400, "Bad Request", {{"Content-Length", "0"}, {"Connection", "close"}}, ""});
+        send_response(client_sock_, HttpResponse{400, "Bad Request", {{"Content-Length", "0"}, {"Connection", "close"}}, ""});
         done_ = true;
     }
 
@@ -152,8 +142,7 @@ private:
 
     void send_response(int client_sock, const HttpResponse& resp)
     {
-        std::string response_str =
-            "HTTP/1.1 " + std::to_string(resp.status_code) + " " + resp.status_message + "\r\n";
+        std::string response_str = "HTTP/1.1 " + std::to_string(resp.status_code) + " " + resp.status_message + "\r\n";
         for (const auto& header : resp.headers)
         {
             response_str += header.first + ": " + header.second + "\r\n";
@@ -180,7 +169,7 @@ private:
                     logger_->warn("send would block, busy polling...");
                     continue;   // 内核缓冲区满，忙轮询等待可写
                 }
-    
+
                 if (errno == EINTR)
                 {
                     logger_->warn("send interrupted by signal, retrying...");

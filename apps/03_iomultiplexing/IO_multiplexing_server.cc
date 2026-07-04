@@ -1,5 +1,6 @@
 #include <dirent.h>
 #include <iostream>
+#include <map>
 #include <memory>
 #include <signal.h>
 #include <stack>
@@ -29,8 +30,7 @@ struct Connection
     Connection(Socket&& sock, Router& r, std::shared_ptr<spdlog::logger> logger)
         : client_sock_(std::move(sock))
     {
-        http_builder_ =
-            std::unique_ptr<HttpReqBuilder>(new HttpReqBuilder(r, client_sock_.fd(), logger));
+        http_builder_ = std::unique_ptr<HttpReqBuilder>(new HttpReqBuilder(r, client_sock_.fd(), logger));
         http_parser_ = std::unique_ptr<HttpParser>(new HttpParser(http_builder_.get()));
     }
     ~Connection()
@@ -51,8 +51,7 @@ public:
         , static_dir_(std::move(static_dir))
         , running_(false)
     {
-        logger_ = spdlog::basic_logger_mt("io_multiplexing_Server_Logger",
-                                          "logs/io_multiplexing_server.log");
+        logger_ = spdlog::basic_logger_mt("io_multiplexing_Server_Logger", "logs/io_multiplexing_server.log");
         router_ = register_router(static_dir_);
     }
 
@@ -78,9 +77,8 @@ private:
     void accept_connection_poll();
     void accept_connection_epoll();
 
-    std::unique_ptr<Router>  register_router(std::string& dir);   // 注册路由
-    std::vector<std::string> get_html_files_recursively(
-        const std::string& dir);   // 注册路由的辅助函数
+    std::unique_ptr<Router>  register_router(std::string& dir);                    // 注册路由
+    std::vector<std::string> get_html_files_recursively(const std::string& dir);   // 注册路由的辅助函数
 };
 
 /**
@@ -96,9 +94,7 @@ bool Server::start()
 
     if (socket_->listen(128) == false)
     {
-        logger_->error("socket listen failed: error code {}, errmsg {}",
-                       socket_->getSocketError(),
-                       strerror(errno));
+        logger_->error("socket listen failed: error code {}, errmsg {}", socket_->getSocketError(), strerror(errno));
         return false;
     }
 
@@ -142,9 +138,7 @@ bool Server::setup_socket()
     socket_ = std::unique_ptr<Socket>(new Socket(::socket(AF_INET, SOCK_STREAM, 0)));
     if (!socket_ || socket_->fd() < 0)
     {
-        logger_->error("socket creation failed: error code {}, errmsg {}",
-                       socket_->getSocketError(),
-                       strerror(errno));
+        logger_->error("socket creation failed: error code {}, errmsg {}", socket_->getSocketError(), strerror(errno));
         return false;
     }
 
@@ -160,11 +154,7 @@ bool Server::setup_socket()
     addr.sin_port = htons(port_);
     if (!socket_->bind(addr))
     {
-        logger_->error("socket bind failed; address: {}, port: {}, error code: {}, errmsg: {}",
-                       address_,
-                       port_,
-                       socket_->getSocketError(),
-                       strerror(errno));
+        logger_->error("socket bind failed; address: {}, port: {}, error code: {}, errmsg: {}", address_, port_, socket_->getSocketError(), strerror(errno));
         return false;
     }
     return true;
@@ -228,14 +218,12 @@ void Server::accept_connection_epoll()
             {
                 struct sockaddr_in client_addr;
                 socklen_t          client_len = sizeof(client_addr);
-                Socket client_sock(::accept(fd, (struct sockaddr*)&client_addr, &client_len));
+                Socket             client_sock(::accept(fd, (struct sockaddr*)&client_addr, &client_len));
 
                 if (client_sock.fd() < 0)
                 {
                     if (errno != EAGAIN && errno != EWOULDBLOCK)
-                        logger_->error("socket creation failed: error code {}, errmsg {}",
-                                       client_sock.getSocketError(),
-                                       strerror(errno));
+                        logger_->error("socket creation failed: error code {}, errmsg {}", client_sock.getSocketError(), strerror(errno));
                     continue;
                 }
 
@@ -254,8 +242,7 @@ void Server::accept_connection_epoll()
                 logger_->debug("New Connection: {}", client_sock.fd());
 
                 int client_fd = client_sock.fd();
-                connections[client_fd] = std::unique_ptr<Connection>(
-                    new Connection(std::move(client_sock), *router_, logger_));
+                connections[client_fd] = std::unique_ptr<Connection>(new Connection(std::move(client_sock), *router_, logger_));
             }
             else   // 处理连接中的数据
             {
@@ -332,19 +319,12 @@ std::unique_ptr<Router> Server::register_router(std::string& dir)
 {
     std::vector<std::string> html_files = get_html_files_recursively(dir);
     std::unique_ptr<Router>  router(new Router());
-    router->addRoute(HttpMethod::GET,
-                     "/",
-                     [dir, this]() {
-                         return std::unique_ptr<RequestHandler>(
-                             new HtmlFileHandler(dir + "/index.html", logger_));
-                     });
+    router->addRoute(HttpMethod::GET, "/", [dir, this]() { return std::unique_ptr<RequestHandler>(new HtmlFileHandler(dir + "/index.html", logger_)); });
     for (const auto& file_path : html_files)
     {
-        router->addRoute(
-            HttpMethod::GET,
-            file_path.substr(dir.size()),   // 去掉前缀目录
-            [file_path, this]()
-            { return std::unique_ptr<RequestHandler>(new HtmlFileHandler(file_path, logger_)); });
+        router->addRoute(HttpMethod::GET,
+                         file_path.substr(dir.size()),   // 去掉前缀目录
+                         [file_path, this]() { return std::unique_ptr<RequestHandler>(new HtmlFileHandler(file_path, logger_)); });
     }
     return router;
 }

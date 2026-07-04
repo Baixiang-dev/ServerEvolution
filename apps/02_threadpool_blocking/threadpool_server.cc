@@ -32,8 +32,7 @@ public:
         , running_(false)
         , thread_pool_(pool_size)
     {
-        logger_ =
-            spdlog::basic_logger_mt("thread_pool_Server_Logger", "logs/thread_pool_server.log");
+        logger_ = spdlog::basic_logger_mt("thread_pool_Server_Logger", "logs/thread_pool_server.log");
         router_ = register_router(static_dir_);
     }
     ~Server() { stop(); }
@@ -56,9 +55,8 @@ private:
     void accept_connection();                                  // 侦听并接受连接
     void handle_client(std::unique_ptr<Socket> client_sock);   // 处理新连接
 
-    std::unique_ptr<Router>  register_router(std::string& dir);   // 注册路由
-    std::vector<std::string> get_html_files_recursively(
-        const std::string& dir);   // 注册路由的辅助函数
+    std::unique_ptr<Router>  register_router(std::string& dir);                    // 注册路由
+    std::vector<std::string> get_html_files_recursively(const std::string& dir);   // 注册路由的辅助函数
 };
 
 /**
@@ -74,9 +72,7 @@ bool Server::start()
 
     if (socket_->listen(128) == false)
     {
-        logger_->error("socket listen failed: error code {}, errmsg {}",
-                       socket_->getSocketError(),
-                       strerror(errno));
+        logger_->error("socket listen failed: error code {}, errmsg {}", socket_->getSocketError(), strerror(errno));
         return false;
     }
 
@@ -121,9 +117,7 @@ bool Server::setup_socket()
     socket_ = std::unique_ptr<Socket>(new Socket(::socket(AF_INET, SOCK_STREAM, 0)));
     if (!socket_ || socket_->fd() < 0)
     {
-        logger_->error("socket creation failed: error code {}, errmsg {}",
-                       socket_->getSocketError(),
-                       strerror(errno));
+        logger_->error("socket creation failed: error code {}, errmsg {}", socket_->getSocketError(), strerror(errno));
         return false;
     }
 
@@ -139,11 +133,7 @@ bool Server::setup_socket()
     address.sin_port = htons(port_);
     if (!socket_->bind(address))
     {
-        logger_->error("socket bind failed; address: {}, port: {}, error code: {}, errmsg: {}",
-                       address_,
-                       port_,
-                       socket_->getSocketError(),
-                       strerror(errno));
+        logger_->error("socket bind failed; address: {}, port: {}, error code: {}, errmsg: {}", address_, port_, socket_->getSocketError(), strerror(errno));
         return false;
     }
     return true;
@@ -158,15 +148,13 @@ void Server::accept_connection()
     {
         struct sockaddr_in      client_addr;
         socklen_t               addr_len = sizeof(client_addr);
-        std::unique_ptr<Socket> client_sock =
-            std::unique_ptr<Socket>(new Socket(socket_->accept(&client_addr, &addr_len)));
+        std::unique_ptr<Socket> client_sock = std::unique_ptr<Socket>(new Socket(socket_->accept(&client_addr, &addr_len)));
         if (!client_sock || client_sock->fd() < 0)
         {
             logger_->error("Accept failed: {}", strerror(errno));
             continue;
         }
-        thread_pool_.enqueue([this, sock = std::move(client_sock)]() mutable
-                             { handle_client(std::move(sock)); });
+        thread_pool_.enqueue([this, sock = std::move(client_sock)]() mutable { handle_client(std::move(sock)); });
     }
 }
 
@@ -218,19 +206,12 @@ std::unique_ptr<Router> Server::register_router(std::string& dir)
 {
     std::vector<std::string> html_files = get_html_files_recursively(dir);
     std::unique_ptr<Router>  router(new Router());
-    router->addRoute(HttpMethod::GET,
-                     "/",
-                     [dir, this]() {
-                         return std::unique_ptr<RequestHandler>(
-                             new HtmlFileHandler(dir + "/index.html", logger_));
-                     });
+    router->addRoute(HttpMethod::GET, "/", [dir, this]() { return std::unique_ptr<RequestHandler>(new HtmlFileHandler(dir + "/index.html", logger_)); });
     for (const auto& file_path : html_files)
     {
-        router->addRoute(
-            HttpMethod::GET,
-            file_path.substr(dir.size()),   // 去掉前缀目录
-            [file_path, this]()
-            { return std::unique_ptr<RequestHandler>(new HtmlFileHandler(file_path, logger_)); });
+        router->addRoute(HttpMethod::GET,
+                         file_path.substr(dir.size()),   // 去掉前缀目录
+                         [file_path, this]() { return std::unique_ptr<RequestHandler>(new HtmlFileHandler(file_path, logger_)); });
     }
     return router;
 }
