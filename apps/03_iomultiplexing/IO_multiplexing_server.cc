@@ -6,7 +6,6 @@
 #include <stack>
 #include <string>
 #include <sys/epoll.h>
-#include <map>
 
 // Third-party code
 #include <spdlog/sinks/basic_file_sink.h>
@@ -143,6 +142,7 @@ bool Server::setup_socket()
     }
 
     socket_->setReuseAddr();
+    socket_->setNonBlocking();
 
     struct sockaddr_in addr;
     addr.sin_family = AF_INET;
@@ -192,7 +192,7 @@ void Server::accept_connection_epoll()
     }
 
     struct epoll_event event;
-    event.events = EPOLLIN;
+    event.events = EPOLLIN | EPOLLET;
     event.data.fd = socket_->fd();
 
     if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, socket_->fd(), &event) == -1)
@@ -390,7 +390,7 @@ using handler_t = void (*)(int);
 /**
  * 为指定信号注册信号处理函数
  */
-handler_t Singal(int signum, handler_t handler)
+handler_t Signal(int signum, handler_t handler)
 {
     struct sigaction act, old_act;
     act.sa_handler = handler;
@@ -426,7 +426,7 @@ void usage(const char* prog)
 int main(int argc, char* argv[])
 {
     spdlog::set_level(spdlog::level::debug);
-    Singal(SIGINT, sigint_handler);
+    Signal(SIGINT, sigint_handler);
     std::string address = "127.0.0.1";
     int         port = 7788;
 
