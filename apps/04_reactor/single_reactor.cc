@@ -129,6 +129,7 @@ private:
     std::thread                                server_thread;   // 服务器主线程
     std::map<int, std::unique_ptr<Connection>> connections_;    // fd -> connection
     std::map<int, std::unique_ptr<Channel>>    channels_;       // fd -> channel
+    std::vector<int>                           to_remove;       // 需要移除的 fd 列表，依据列表移除对应的 connection 和 channel
     int                                        epfd_;
 
     void run();
@@ -191,7 +192,7 @@ void Server::run()
 {
     struct epoll_event ev;
     ev.data.fd = socket_->fd();
-    ev.events = EPOLLIN | EPOLLET;
+    ev.events = EPOLLIN;
 
 
     if (epoll_ctl(epfd_, EPOLL_CTL_ADD, socket_->fd(), &ev) == -1)
@@ -228,6 +229,13 @@ void Server::run()
                 }
             }
         }
+        // 释放已标记的 channel 和 connection
+        for (int fd : to_remove)
+        {
+            channels_.erase(fd);
+            connections_.erase(fd);
+        }
+        to_remove.clear();
     }
 }
 
@@ -291,8 +299,6 @@ void Server::accept_connection()
 
     channels_[chan->fd()] = std::move(chan);
     connections_[client_fd] = std::move(conn);
-
-    logger_->debug("New connection accepted: fd {}", client_fd);
 }
 
 /** TODO: callback 里面如何访问 channel 的 fd
@@ -320,15 +326,15 @@ void Server::handle_client(int client_fd)
                 break;
             }
             logger_->error("Read error on {} : {}", client_fd, strerror(errno));
-            connections_.erase(client_fd);
-            channels_.erase(client_fd);
+            epoll_ctl(epfd_, EPOLL_CTL_DEL, client_fd, nullptr);
+            to_remove.push_back(client_fd);   // 标记需要移除的 fd
             return;
         }
         else if (count == 0)
         {
             logger_->debug("Client closed connection: fd {}", client_fd);
-            connections_.erase(client_fd);
-            channels_.erase(client_fd);
+            epoll_ctl(epfd_, EPOLL_CTL_DEL, client_fd, nullptr);
+            to_remove.push_back(client_fd);
             return;
         }
         else
@@ -349,8 +355,7 @@ void Server::handle_client(int client_fd)
                 {
                     logger_->debug("Closing connection: fd {}", client_fd);
                     epoll_ctl(epfd_, EPOLL_CTL_DEL, client_fd, nullptr);
-                    channels_.erase(client_fd);
-                    connections_.erase(client_fd);
+                    to_remove.push_back(client_fd);
                     break;
                 }
             }
