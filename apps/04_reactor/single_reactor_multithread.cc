@@ -89,7 +89,6 @@ private:
 
 struct Connection
 {
-    // Socket                          client_sock;
     std::unique_ptr<HttpReqBuilder> http_builder;
     std::unique_ptr<HttpParser>     http_parser;
     std::unique_ptr<Channel>        channel;   // channel 由 Connection 持有，在 Epoller 和 EventLoop 中使用 raw pointer 做非拥有访问
@@ -403,15 +402,12 @@ void Server::handle_client(int client_fd)
                 break;
             }
             logger_->error("Read error on {} : {}", client_fd, strerror(errno));
-            event_loop_->removeChannel(it->second->channel.get());
             to_remove.push_back(client_fd);   // 标记需要移除的 fd
             return;
         }
         else if (count == 0)
         {
             logger_->debug("Client closed connection: fd {}", client_fd);
-            // epoll_ctl(epfd_, EPOLL_CTL_DEL, client_fd, nullptr);
-            event_loop_->removeChannel(it->second->channel.get());
             to_remove.push_back(client_fd);
             return;
         }
@@ -432,8 +428,6 @@ void Server::handle_client(int client_fd)
                 else
                 {
                     logger_->debug("Closing connection: fd {}", client_fd);
-                    // epoll_ctl(epfd_, EPOLL_CTL_DEL, client_fd, nullptr);
-                    event_loop_->removeChannel(it->second->channel.get());
                     to_remove.push_back(client_fd);
                     break;
                 }
@@ -449,6 +443,7 @@ void Server::remove_connection()
 {
     for (int fd : to_remove)
     {
+        event_loop_->removeChannel(connections_[fd]->channel.get());
         connections_.erase(fd);
     }
     to_remove.clear();
