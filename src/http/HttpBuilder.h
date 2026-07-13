@@ -15,9 +15,10 @@
 class HttpReqBuilder : public HttpParserCallback
 {
 public:
-    HttpReqBuilder(Router& r, int sock, std::shared_ptr<spdlog::logger> logger)
+    using ResponseCallback = std::function<void(HttpResponse&&)>;
+    HttpReqBuilder(Router& r, ResponseCallback onResponse, std::shared_ptr<spdlog::logger> logger)
         : router_(r)
-        , client_sock_(sock)
+        , onResponse_(std::move(onResponse))
         , done_(false)
         , logger_(logger)
     {
@@ -55,7 +56,7 @@ public:
         {
             // 404 处理
             logger_->debug("[404] Not Found: {}", req_.path);
-            send_response(client_sock_, HttpResponse{404, "Not Found", {{"Content-Length", "0"}, {"Connection", "close"}}, ""});
+            onResponse_(HttpResponse{404, "Not Found", {{"Content-Length", "0"}, {"Connection", "close"}}, ""});
             done_ = true;   // 标记结束
             return;
         }
@@ -75,8 +76,7 @@ public:
         if (handler_)
         {
             handler_->onEOM();
-            HttpResponse resp = std::move(handler_->takeResponse());
-            send_response(client_sock_, resp);
+            onResponse_(std::move(handler_->takeResponse()));
         }
         done_ = true;   // 标记结束
     }
@@ -84,7 +84,7 @@ public:
     void onError(int code) override
     {
         logger_->error("Parser Error: {}", code);
-        send_response(client_sock_, HttpResponse{400, "Bad Request", {{"Content-Length", "0"}, {"Connection", "close"}}, ""});
+        onResponse_(HttpResponse{400, "Bad Request", {{"Content-Length", "0"}, {"Connection", "close"}}, ""});
         done_ = true;
     }
 
@@ -136,50 +136,7 @@ private:
     Router&                         router_;
     RouteParams                     params_;
     std::unique_ptr<RequestHandler> handler_;
-    int                             client_sock_;
     bool                            done_;
+    ResponseCallback                onResponse_;
     std::shared_ptr<spdlog::logger> logger_;   // 日志器，由外部注入
-
-    void send_response(int client_sock, const HttpResponse& resp)
-    {
-        std::string response_str = "HTTP/1.1 " + std::to_string(resp.status_code) + " " + resp.status_message + "\r\n";
-        for (const auto& header : resp.headers)
-        {
-            response_str += header.first + ": " + header.second + "\r\n";
-        }
-        response_str += "\r\n";
-        response_str += resp.body;
-
-        // 确保全部数据被发送（处理部分发送）
-        /* send发送的字节数可能小于实际发送的字节数，如以下情况
-         *  1. 内核发送缓冲区剩余空间不足；
-         *  2. 消息很大，内核分片后多次复制到内核缓冲区；
-         *  3. 非阻塞模式，send 会尽可能发送能立即写入的部分然后返回
-         */
-        ssize_t     total_sent = 0;
-        ssize_t     to_send = response_str.size();
-        const char* data = response_str.c_str();
-        while (total_sent < to_send)
-        {
-            ssize_t sent = ::send(client_sock, data + total_sent, to_send - total_sent, 0);
-            if (sent <= 0)
-            {
-                if (errno == EAGAIN || errno == EWOULDBLOCK)
-                {
-                    logger_->warn("send would block, busy polling...");
-                    continue;   // 内核缓冲区满，忙轮询等待可写
-                }
-
-                if (errno == EINTR)
-                {
-                    logger_->warn("send interrupted by signal, retrying...");
-                    continue;   // 被信号中断，重试
-                }
-
-                logger_->error("send failed: {}", std::strerror(errno));
-                return;
-            }
-            total_sent += sent;
-        }
-    }
 };
