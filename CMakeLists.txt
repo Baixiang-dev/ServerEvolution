@@ -67,3 +67,4 @@ add_server_app(threadpool_server apps/02_threadpool_blocking/threadpool_server.c
 add_server_app(IO_multiplexing_server apps/03_iomultiplexing/IO_multiplexing_server.cc io_multiplexing_server)
 add_server_app(single_reactor_server apps/04_reactor/single_reactor.cc single_reactor_server)
 add_server_app(single_reactor_multithread apps/04_reactor/single_reactor_multithread.cc single_reactor_multithread)
+add_server_app(multi_reactor_server apps/04_reactor/multi_reactor.cc multi_reactor_server)
