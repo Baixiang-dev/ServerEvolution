@@ -581,7 +581,7 @@ class Acceptor
 {
 public:
     explicit Acceptor(std::string& listenAddr, int port, EventLoop* loop)
-        : listAddr_(listAddr_)
+        : listAddr_(listenAddr)
         , port_(port)
         , loop_(loop)
     {
@@ -670,7 +670,7 @@ public:
         logger_ = spdlog::basic_logger_mt("single_reactor_Server_Logger", "logs/single_reactor_server.log");
         router_ = register_router(static_dir_);
         thread_pool_ = make_unique<ThreadPool>(pool_size);
-        main_loop_ = make_unique<EventLoop>(thread_pool_.get());
+        main_loop_ = make_unique<EventLoop>();
         acceptor_ = make_unique<Acceptor>(addr, port, main_loop_.get());
         for (int i = 0; i < sub_reactor_number; i++)
         {
