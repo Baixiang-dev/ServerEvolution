@@ -24,6 +24,12 @@ public:
     {
     }
 
+    // 兼容旧 Server 的实现
+    HttpReqBuilder(Router& r, int client_sock, std::shared_ptr<spdlog::logger> logger)
+        : HttpReqBuilder(r, [client_sock, logger](HttpResponse&& resp) { sendToFd(client_sock, resp, logger); }, logger)
+    {
+    }
+
     void onRequestLine(const std::string& method, const std::string& path, const std::string& version) override
     {
         version_ = version;
@@ -136,7 +142,50 @@ private:
     Router&                         router_;
     RouteParams                     params_;
     std::unique_ptr<RequestHandler> handler_;
-    bool                            done_;
     ResponseCallback                onResponse_;
+    bool                            done_;
     std::shared_ptr<spdlog::logger> logger_;   // 日志器，由外部注入
+
+    static void sendToFd(int fd, const HttpResponse& resp, std::shared_ptr<spdlog::logger> logger)
+    {
+        std::string response_str = "HTTP/1.1 " + std::to_string(resp.status_code) + " " + resp.status_message + "\r\n";
+        for (const auto& header : resp.headers)
+        {
+            response_str += header.first + ": " + header.second + "\r\n";
+        }
+        response_str += "\r\n";
+        response_str += resp.body;
+
+        // 确保全部数据被发送（处理部分发送）
+        /* send发送的字节数可能小于实际发送的字节数，如以下情况
+         *  1. 内核发送缓冲区剩余空间不足；
+         *  2. 消息很大，内核分片后多次复制到内核缓冲区；
+         *  3. 非阻塞模式，send 会尽可能发送能立即写入的部分然后返回
+         */
+        ssize_t     total_sent = 0;
+        ssize_t     to_send = response_str.size();
+        const char* data = response_str.c_str();
+        while (total_sent < to_send)
+        {
+            ssize_t sent = ::send(fd, data + total_sent, to_send - total_sent, 0);
+            if (sent <= 0)
+            {
+                if (errno == EAGAIN || errno == EWOULDBLOCK)
+                {
+                    logger->warn("send would block, busy polling...");
+                    continue;   // 内核缓冲区满，忙轮询等待可写
+                }
+
+                if (errno == EINTR)
+                {
+                    logger->warn("send interrupted by signal, retrying...");
+                    continue;   // 被信号中断，重试
+                }
+
+                logger->error("send failed: {}", std::strerror(errno));
+                return;
+            }
+            total_sent += sent;
+        }
+    }
 };
