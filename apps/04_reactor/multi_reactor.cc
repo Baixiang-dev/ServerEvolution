@@ -377,21 +377,6 @@ private:
     std::thread                thread_;
 };
 
-// struct Connection
-// {
-//     std::unique_ptr<HttpReqBuilder> http_builder;
-//     std::unique_ptr<HttpParser>     http_parser;
-//     std::unique_ptr<Channel>        channel;   // channel 由 Connection 持有，在 Epoller 和 EventLoop 中使用 raw pointer 做非拥有访问
-
-//     Connection(std::unique_ptr<Channel> chan, Router& r, std::shared_ptr<spdlog::logger> logger)
-//         : channel(std::move(chan))
-//     {
-//         http_builder = make_unique<HttpReqBuilder>(r, channel->fd(), logger);
-
-//         http_parser = make_unique<HttpParser>(http_builder.get());
-//     }
-// };
-
 /**
  * @brief 对TCP连接的抽象
  *
@@ -410,7 +395,7 @@ public:
         channel_ = make_unique<Channel>(std::move(sock), EPOLLIN | EPOLLET);
         channel_->setReadCallback([this]() { this->handleRead(); });
         channel_->setWriteCallback([this]() { this->handleWrite(); });
-        channel_->setErrorCallback([this]() { this->handleWrite(); });
+        channel_->setErrorCallback([this]() { this->handleError(); });
         owner_loop_->runInLoop([this]() { this->owner_loop_->addChannel(this->channel_.get()); });
     }
 
@@ -448,9 +433,8 @@ public:
             {
                 // 对端关闭
                 if (close_cb_)
-                {
-                    close();
-                }
+                    close_cb_();
+                close();   // 从 epoll 移除（延迟到 doPendingTasks 执行）
                 return;
             }
             else   // n < 0
@@ -460,6 +444,7 @@ public:
                 // 真正的错误
                 if (error_cb_)
                     error_cb_();
+                close();
                 return;
             }
         }
@@ -480,6 +465,7 @@ public:
                     break;   // 内核缓冲区满，等下次 EPOLLOUT
                 if (error_cb_)
                     error_cb_();
+                close();
                 return;
             }
         }
@@ -494,14 +480,20 @@ public:
     void handleError()
     {
         if (error_cb_)
-        {
             error_cb_();
-        }
+        close();
     }
 
     void close()
     {
-        owner_loop_->runInLoop([this]() { doClose(); });
+        if (closed_)
+            return;
+        closed_ = true;
+        // 使用 queueInLoop 而非 runInLoop：
+        // 如果 close() 是在 handleRead 回调链中（如 onResponse → close）被调用，
+        // 同步执行 doClose() 会销毁 channel_，而 handleRead 的 while 循环还在使用它。
+        // 延迟到 doPendingTasks 执行，确保当前回调栈完全退出。
+        owner_loop_->queueInLoop([this]() { doClose(); });
     }
 
     int fd() const { return channel_->fd(); }
@@ -515,6 +507,7 @@ private:
     std::function<void(const char*, size_t)> read_cb_;
     std::function<void()>                    close_cb_;
     std::function<void()>                    error_cb_;
+    bool                                     closed_ = false;
 
     void doClose()
     {
@@ -644,6 +637,9 @@ public:
                     ::close(fd);
                 }
             });
+
+        // 将 accept channel 注册到主 EventLoop 的 epoll
+        loop_->addChannel(accept_channel_.get());
     }
 
     void close() { ::shutdown(accept_channel_->fd(), SHUT_WR); }
@@ -694,6 +690,7 @@ private:
     std::vector<std::unique_ptr<EventLoopThread>> io_threads_;
     std::unique_ptr<Acceptor>                     acceptor_;
     std::map<int, std::unique_ptr<Connection>>    connections_;   // fd -> connection
+    std::map<int, std::unique_ptr<HttpSession>>   sessions_;      // fd -> session
 
     void       run();
     bool       setup_socket();   // 创建并设置 socket
@@ -741,40 +738,38 @@ void Server::stop()
 
 void Server::run()
 {
-    /**
-     * TODO: main loop 启动 acceptor 接受新连接
-     */
-    // 把 listen fd 封装成 Channel，统一到 EventLoop 中处理
+    // 1. 启动所有 Sub Reactor 线程，主线程阻塞直到每个 EventLoop 就绪
+    for (auto& t : io_threads_)
+    {
+        t->run();
+    }
 
+    // 2. 将 Acceptor 的 listen channel 注册到 main_loop，启动主事件循环
     acceptor_->setNewConnectionCallback([this](int fd) { this->new_connection(fd); });
     acceptor_->listen();
-    /**
-     * 问题： 连接的清理现在应该放在哪里
-     * 答：Connection自己管理生命周期，需要关闭时调用close，在所属EventLoop内实际执行销毁
-     */
-    // main_reactor_->pendingTask([this]() { this->remove_connection(); });
+    main_loop_->loop();   // 阻塞直到 quit
 }
 
 void Server::new_connection(int fd)
 {
-    /** Done:
-     * 1. Server 不需要知道 Channel，只需要把 fd 传递给Connection，Connection内部管理Channel的创建、销毁，所有内容
-     * 2. 分配Reactor
-     * 3. 创建Connection
-     * 4. addChannel 投递到 runInLoop 执行
-     */
     EventLoop* loop = getNextEventloop();
     auto       client_sock = make_unique<Socket>(fd);
     auto       conn = make_unique<Connection>(std::move(client_sock), loop);        // Connection 创建时自动注册到 EventLoop
-    auto       session = make_unique<HttpSession>(conn.get(), *router_, logger_);   // 把Connectrion绑定到Session
+    auto       session = make_unique<HttpSession>(conn.get(), *router_, logger_);   // 把Connection绑定到Session
     session->setCloseCallback(
         [this](int fd)
         {
-            // 关闭回调：在Connection所属的EventLoop执行关闭
-            main_loop_->queueInLoop([this, fd]() { connections_.erase(fd); });
+            // 关闭回调：在 main_loop 中清理连接和会话
+            main_loop_->queueInLoop(
+                [this, fd]()
+                {
+                    connections_.erase(fd);
+                    sessions_.erase(fd);
+                });
         });
 
     connections_[fd] = std::move(conn);
+    sessions_[fd] = std::move(session);
 }
 
 EventLoop* Server::getNextEventloop()
@@ -784,80 +779,6 @@ EventLoop* Server::getNextEventloop()
     i = (i + 1) % io_threads_.size();
     return next;
 }
-
-/**
- * TODO: 对 TCP连接数据的处理，交给上层Session，Server提供处理数据的回调，供Session使用
- */
-// void Server::handle_client(int client_fd)
-// {
-//     auto it = connections_.find(client_fd);
-//     if (it == connections_.end())
-//     {
-//         logger_->error("Connection not found for fd: {}", client_fd);
-//         return;
-//     }
-
-//     auto& ctx = it->second;
-//     char  buffer[4096];
-//     while (true)
-//     {
-//         ssize_t count = read(client_fd, buffer, sizeof(buffer));
-
-//         if (count == -1)
-//         {
-//             if (errno == EAGAIN || errno == EWOULDBLOCK)
-//             {
-//                 break;
-//             }
-//             logger_->error("Read error on {} : {}", client_fd, strerror(errno));
-//             to_remove.push_back(client_fd);   // 标记需要移除的 fd
-//             return;
-//         }
-//         else if (count == 0)
-//         {
-//             logger_->debug("Client closed connection: fd {}", client_fd);
-//             to_remove.push_back(client_fd);
-//             return;
-//         }
-//         else
-//         {
-//             ctx->http_parser->feed(buffer, static_cast<size_t>(count)); /** TODO: 参数风格统一，ssize */
-//             if (ctx->http_builder->isDone())
-//             {
-//                 if (ctx->http_builder->shouldKeepAlive())
-//                 {
-//                     logger_->debug("Keep-Alive for {}, resetting parser", client_fd);
-//                     ctx->http_builder->reset();
-//                     ctx->http_parser->reset();
-
-//                     // 触发 Parser 处理 buffer 中剩余的数据（如果有）
-//                     ctx->http_parser->feed("", 0);
-//                 }
-//                 else
-//                 {
-//                     logger_->debug("Closing connection: fd {}", client_fd);
-//                     to_remove.push_back(client_fd);
-//                     break;
-//                 }
-//             }
-//         }
-//     }
-// }
-
-/**
- * TODO: 调用Connection的close，Connectoion内部在EventLoop中等待销毁
- */
-// /**
-//  * @brief 每轮事件循环的结束清理连接
-//  */
-// void Server::remove_connection()
-// {
-//     for (int fd : to_remove)
-//     {
-//         connections_.erase(fd);
-//     }
-//     to_remove.clear();
-// }
 
 /**
  * 注册路由
