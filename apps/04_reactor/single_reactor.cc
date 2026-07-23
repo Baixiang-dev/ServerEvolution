@@ -48,15 +48,15 @@ public:
     {
     }
 
-    void setReadCallback(std::function<void()> cb) { readCallback_ = std::move(cb); }
-    void setWriteCallback(std::function<void()> cb) { writeCallback_ = std::move(cb); }
-    void setErrorCallback(std::function<void()> cb) { errorCallback_ = std::move(cb); }
+    void SetReadCallback(std::function<void()> cb) { readCallback_ = std::move(cb); }
+    void SetWriteCallback(std::function<void()> cb) { writeCallback_ = std::move(cb); }
+    void SetErrorCallback(std::function<void()> cb) { errorCallback_ = std::move(cb); }
 
-    int  fd() const { return sock_ ? sock_->fd() : fd_; }
-    int  events() const { return events_; }
-    void set_revents(int revents) { revents_ = revents; }
+    int  Fd() const { return sock_ ? sock_->fd() : fd_; }
+    int  Events() const { return events_; }
+    void SetREvents(int revents) { revents_ = revents; }
 
-    void handleEvent()
+    void HandleEvent()
     {
         if (revents_ & EPOLLIN)
         {
@@ -99,7 +99,7 @@ struct Connection
         /** TODO:
          * 对 Socket 的 发送/读取， 也就是对 IO 的处理应该统一在一个地方，而不是分散各处
          */
-        http_builder = make_unique<HttpReqBuilder>(r, channel->fd(), logger);
+        http_builder = make_unique<HttpReqBuilder>(r, channel->Fd(), logger);
 
         http_parser = make_unique<HttpParser>(http_builder.get());
     }
@@ -131,49 +131,49 @@ public:
     /**
      * @brief 注册一个 channel 到 epoll
      */
-    void addChannel(Channel* ch)
+    void AddChannel(Channel* ch)
     {
         struct epoll_event ev;
         ev.data.ptr = ch;
-        ev.events = ch->events();
-        epoll_ctl(epoll_fd_, EPOLL_CTL_ADD, ch->fd(), &ev);
-        channels_[ch->fd()] = ch;
+        ev.events = ch->Events();
+        epoll_ctl(epoll_fd_, EPOLL_CTL_ADD, ch->Fd(), &ev);
+        channels_[ch->Fd()] = ch;
     }
 
     /**
      * @brief 修改一个已注册的 channel 的事件
      */
-    void updateChannel(Channel* ch)
+    void UpdateChannel(Channel* ch)
     {
-        if (channels_.find(ch->fd()) == channels_.end())
+        if (channels_.find(ch->Fd()) == channels_.end())
         {
             throw std::runtime_error("Channel not found in Epoller");
         }
 
         struct epoll_event ev;
         ev.data.ptr = ch;
-        ev.events = ch->events();
-        epoll_ctl(epoll_fd_, EPOLL_CTL_MOD, ch->fd(), &ev);
+        ev.events = ch->Events();
+        epoll_ctl(epoll_fd_, EPOLL_CTL_MOD, ch->Fd(), &ev);
     }
 
     /**
      * @brief 从 epoll 中移除一个 channel
      */
-    void removeChannel(Channel* ch)
+    void RemoveChannel(Channel* ch)
     {
-        if (channels_.find(ch->fd()) == channels_.end())
+        if (channels_.find(ch->Fd()) == channels_.end())
         {
             throw std::runtime_error("Channel not found in Epoller");
         }
 
-        epoll_ctl(epoll_fd_, EPOLL_CTL_DEL, ch->fd(), nullptr);
-        channels_.erase(ch->fd());
+        epoll_ctl(epoll_fd_, EPOLL_CTL_DEL, ch->Fd(), nullptr);
+        channels_.erase(ch->Fd());
     }
 
     /**
      * @brief 在 epoll 上侦听事件并返回活跃Channel
      */
-    std::vector<Channel*> wait(int timeout_ms)
+    std::vector<Channel*> Wait(int timeout_ms)
     {
         const int             max_events = 64;
         std::vector<Channel*> ready;
@@ -182,7 +182,7 @@ public:
         for (int i = 0; i < n; ++i)
         {
             Channel* ch = static_cast<Channel*>(events[i].data.ptr);
-            ch->set_revents(events[i].events);
+            ch->SetREvents(events[i].events);
             ready.push_back(ch);
         }
         return ready;
@@ -205,25 +205,25 @@ public:
     }
     ~EventLoop() {}
 
-    void loop()
+    void Loop()
     {
         while (!quit_)
         {
-            auto activated_channels = epoller_.wait(1000);
+            auto activated_channels = epoller_.Wait(1000);
             for (Channel* chan : activated_channels)
             {
-                chan->handleEvent();
+                chan->HandleEvent();
             }
             afterLoopTask_();
         }
     }
 
-    void quit() { quit_ = true; }
+    void Quit() { quit_ = true; }
 
-    void addChannel(Channel* ch) { epoller_.addChannel(ch); }
-    void updateChannel(Channel* ch) { epoller_.updateChannel(ch); }
-    void removeChannel(Channel* ch) { epoller_.removeChannel(ch); }
-    void pendingTask(std::function<void()> cb) { afterLoopTask_ = cb; }
+    void AddChannel(Channel* ch) { epoller_.AddChannel(ch); }
+    void UpdateChannel(Channel* ch) { epoller_.UpdateChannel(ch); }
+    void RemoveChannel(Channel* ch) { epoller_.RemoveChannel(ch); }
+    void PendingTask(std::function<void()> cb) { afterLoopTask_ = cb; }
 
 private:
     Epoller               epoller_;
@@ -241,13 +241,13 @@ public:
         , running_(false)
     {
         logger_ = spdlog::basic_logger_mt("single_reactor_Server_Logger", "logs/single_reactor_server.log");
-        router_ = register_router(static_dir_);
+        router_ = Register_Router(static_dir_);
     }
 
-    ~Server() { stop(); }
+    ~Server() { Stop(); }
 
-    bool start();
-    void stop();
+    bool Start();
+    void Stop();
 
 private:
     std::string                                address_;
@@ -262,19 +262,19 @@ private:
     std::map<int, std::unique_ptr<Connection>> connections_;   // fd -> connection
     std::vector<int>                           to_remove;      // 需要移除的 fd 列表，依据列表移除对应的 connection 和 channel
 
-    void run();
-    bool setup_socket();   // 创建并设置 socket
-    void accept_connection();
-    void handle_client(int client_fd);   // 处理新连接上的请求
-    void remove_connection();            // 清理连接
+    void Run();
+    bool SetupSocket();   // 创建并设置 socket
+    void AcceptConnection();
+    void HandleNewConnection(int client_fd);   // 处理新连接上的请求
+    void RemoveConnection();            // 清理连接
 
-    std::unique_ptr<Router>  register_router(std::string& dir);                    // 注册路由
-    std::vector<std::string> get_html_files_recursively(const std::string& dir);   // 注册路由的辅助函数
+    std::unique_ptr<Router>  Register_Router(std::string& dir);                    // 注册路由
+    std::vector<std::string> GetHtmlFilesRecurisvely(const std::string& dir);   // 注册路由的辅助函数
 };
 
-bool Server::start()
+bool Server::Start()
 {
-    if (!setup_socket())
+    if (!SetupSocket())
     {
         logger_->error("Failed to setup socket");
         return false;
@@ -287,17 +287,17 @@ bool Server::start()
     }
 
     running_ = true;
-    server_thread = std::thread(&Server::run, this);
+    server_thread = std::thread(&Server::Run, this);
     logger_->info("Server started on {}:{}", address_, port_);
     return true;
 }
 
-void Server::stop()
+void Server::Stop()
 {
     if (running_)
     {
         running_ = false;
-        event_loop_.quit();
+        event_loop_.Quit();
 
         ::shutdown(socket_->fd(), SHUT_WR);
         socket_->close();
@@ -313,18 +313,18 @@ void Server::stop()
     }
 }
 
-void Server::run()
+void Server::Run()
 {
     // 把 listen fd 封装成 Channel，统一到 EventLoop 中处理
     Channel listen_chan = Channel(socket_->fd(), EPOLLIN);
-    listen_chan.setReadCallback([this]() { this->accept_connection(); });
-    event_loop_.addChannel(&listen_chan);
-    event_loop_.pendingTask([this]() { this->remove_connection(); });
+    listen_chan.SetReadCallback([this]() { this->AcceptConnection(); });
+    event_loop_.AddChannel(&listen_chan);
+    event_loop_.PendingTask([this]() { this->RemoveConnection(); });
 
-    event_loop_.loop();
+    event_loop_.Loop();
 }
 
-bool Server::setup_socket()
+bool Server::SetupSocket()
 {
     socket_ = make_unique<Socket>(::socket(AF_INET, SOCK_STREAM, 0));
     if (!socket_ || socket_->fd() < 0)
@@ -353,7 +353,7 @@ bool Server::setup_socket()
     return true;
 }
 
-void Server::accept_connection()
+void Server::AcceptConnection()
 {
     struct sockaddr_in      client_addr;
     socklen_t               client_len = sizeof(client_addr);
@@ -371,19 +371,19 @@ void Server::accept_connection()
 
     // 把 fd 和 fd 感兴趣的事件绑定到 channel 上，设置事件的回调函数
     auto chan = make_unique<Channel>(std::move(client_sock), EPOLLIN | EPOLLET);
-    chan->setReadCallback([this, fd = client_fd]() { this->handle_client(fd); });
+    chan->SetReadCallback([this, fd = client_fd]() { this->HandleNewConnection(fd); });
 
     // 创建 Connection，接管 channel 的所有权
     auto conn = make_unique<Connection>(std::move(chan), *router_, logger_);
     // 注册 channel 到 epoll
-    event_loop_.addChannel(conn->channel.get());
+    event_loop_.AddChannel(conn->channel.get());
     connections_[client_fd] = std::move(conn);
 }
 
 /** TODO: callback 里面如何访问 channel 的 fd
  * 答：channel 里面传递 fd 给 callback
  */
-void Server::handle_client(int client_fd)
+void Server::HandleNewConnection(int client_fd)
 {
     auto it = connections_.find(client_fd);
     if (it == connections_.end())
@@ -442,11 +442,11 @@ void Server::handle_client(int client_fd)
 /**
  * @brief 每轮事件循环的结束清理连接
  */
-void Server::remove_connection()
+void Server::RemoveConnection()
 {
     for (int fd : to_remove)
     {
-        event_loop_.removeChannel(connections_[fd]->channel.get());
+        event_loop_.RemoveChannel(connections_[fd]->channel.get());
         connections_.erase(fd);
     }
     to_remove.clear();
@@ -460,9 +460,9 @@ void Server::remove_connection()
  *
  * @return 路由对象指针
  */
-std::unique_ptr<Router> Server::register_router(std::string& dir)
+std::unique_ptr<Router> Server::Register_Router(std::string& dir)
 {
-    std::vector<std::string> html_files = get_html_files_recursively(dir);
+    std::vector<std::string> html_files = GetHtmlFilesRecurisvely(dir);
     std::unique_ptr<Router>  router(new Router());
     router->addRoute(HttpMethod::GET, "/", [dir, this]() { return std::unique_ptr<RequestHandler>(new HtmlFileHandler(dir + "/index.html", logger_)); });
     for (const auto& file_path : html_files)
@@ -483,7 +483,7 @@ std::unique_ptr<Router> Server::register_router(std::string& dir)
  *
  * @return HTML文件路径列表
  */
-std::vector<std::string> Server::get_html_files_recursively(const std::string& dir)
+std::vector<std::string> Server::GetHtmlFilesRecurisvely(const std::string& dir)
 {
     std::vector<std::string> html_files;
     std::stack<std::string>  dirs;
@@ -558,7 +558,7 @@ handler_t Signal(int signum, handler_t handler)
     return old_act.sa_handler;
 }
 
-void usage(const char* prog)
+void Usage(const char* prog)
 {
     std::cout << "Usage: " << prog << " [options]\n"
               << "Options:\n"
@@ -587,16 +587,16 @@ int main(int argc, char* argv[])
                 port = std::stoi(optarg);
                 break;
             case 'h':
-                usage(argv[0]);
+                Usage(argv[0]);
                 return 0;
             default:
-                usage(argv[0]);
+                Usage(argv[0]);
                 return 1;
         }
     }
 
     Server server(address, port);
-    if (!server.start())
+    if (!server.Start())
     {
         std::cout << "Failed to start server" << std::endl;
         return 1;
@@ -608,6 +608,6 @@ int main(int argc, char* argv[])
         pause();   // 等待信号
     }
     std::cout << "Received SIGINT, stopping server..." << std::endl;
-    server.stop();
+    server.Stop();
     return 0;
 }
