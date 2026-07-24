@@ -47,16 +47,16 @@ public:
     {
     }
 
-    void setReadCallback(std::function<void()> cb) { readCallback_ = std::move(cb); }
-    void setWriteCallback(std::function<void()> cb) { writeCallback_ = std::move(cb); }
-    void setErrorCallback(std::function<void()> cb) { errorCallback_ = std::move(cb); }
+    void SetReadCallback(std::function<void()> cb) { readCallback_ = std::move(cb); }
+    void SetWriteCallback(std::function<void()> cb) { writeCallback_ = std::move(cb); }
+    void SetErrorCallback(std::function<void()> cb) { errorCallback_ = std::move(cb); }
 
-    int  fd() const { return sock_ ? sock_->fd() : fd_; }
-    int  events() const { return events_; }
-    void set_revents(int revents) { revents_ = revents; }
-    void setEvents(int events) { events_ = events; }
+    int  Fd() const { return sock_ ? sock_->fd() : fd_; }
+    int  Events() const { return events_; }
+    void SetREvents(int revents) { revents_ = revents; }
+    void SetEvents(int events) { events_ = events; }
 
-    void handleEvent()
+    void HandleEvent()
     {
         if (revents_ & EPOLLIN)
         {
@@ -106,56 +106,56 @@ public:
     {
         if (epoll_fd_ != -1)
         {
-            close(epoll_fd_);
+            ::close(epoll_fd_);
         }
     }
 
     /**
      * @brief 注册一个 channel 到 epoll
      */
-    void addChannel(Channel* ch)
+    void AddChannel(Channel* ch)
     {
         struct epoll_event ev;
         ev.data.ptr = ch;
-        ev.events = ch->events();
-        epoll_ctl(epoll_fd_, EPOLL_CTL_ADD, ch->fd(), &ev);
-        channels_[ch->fd()] = ch;
+        ev.events = ch->Events();
+        epoll_ctl(epoll_fd_, EPOLL_CTL_ADD, ch->Fd(), &ev);
+        channels_[ch->Fd()] = ch;
     }
 
     /**
      * @brief 修改一个已注册的 channel 的事件
      */
-    void updateChannel(Channel* ch)
+    void UpdateChannel(Channel* ch)
     {
-        if (channels_.find(ch->fd()) == channels_.end())
+        if (channels_.find(ch->Fd()) == channels_.end())
         {
             throw std::runtime_error("Channel not found in Epoller");
         }
 
         struct epoll_event ev;
         ev.data.ptr = ch;
-        ev.events = ch->events();
-        epoll_ctl(epoll_fd_, EPOLL_CTL_MOD, ch->fd(), &ev);
+        ev.events = ch->Events();
+        epoll_ctl(epoll_fd_, EPOLL_CTL_MOD, ch->Fd(), &ev);
     }
 
     /**
      * @brief 从 epoll 中移除一个 channel
      */
-    void removeChannel(Channel* ch)
+    void RemoveChannel(Channel* ch)
     {
-        if (channels_.find(ch->fd()) == channels_.end())
+        if (channels_.find(ch->Fd()) == channels_.end())
         {
             throw std::runtime_error("Channel not found in Epoller");
         }
 
-        epoll_ctl(epoll_fd_, EPOLL_CTL_DEL, ch->fd(), nullptr);
-        channels_.erase(ch->fd());
+        epoll_ctl(epoll_fd_, EPOLL_CTL_DEL, ch->Fd(), nullptr);
+        channels_.erase(ch->Fd());
     }
 
     /**
      * @brief 在 epoll 上侦听事件并返回活跃Channel
      */
-    std::vector<Channel*> wait(int timeout_ms)
+    std::vector<Channel*> Wait(int timeout_ms)
     {
         const int             max_events = 64;
         std::vector<Channel*> ready;
@@ -164,7 +164,7 @@ public:
         for (int i = 0; i < n; ++i)
         {
             Channel* ch = static_cast<Channel*>(events[i].data.ptr);
-            ch->set_revents(events[i].events);
+            ch->SetREvents(events[i].events);
             ready.push_back(ch);
         }
         return ready;
@@ -191,8 +191,8 @@ public:
             std::runtime_error("Failed to create event fd");
         }
         wakeupChan_ = make_unique<Channel>(wakeup_fd_, EPOLLIN);
-        wakeupChan_->setReadCallback([this]() { this->handleWakeup(); });
-        epoller_.addChannel(wakeupChan_.get());
+        wakeupChan_->SetReadCallback([this]() { this->HandleWakeUp(); });
+        epoller_.AddChannel(wakeupChan_.get());
     }
     ~EventLoop() {}
 
@@ -201,49 +201,49 @@ public:
 
         while (!quit_)
         {
-            auto activated_channels = epoller_.wait(-1);   // 无IO时永久阻塞，直到 eventfd 唤醒
+            auto activated_channels = epoller_.Wait(-1);   // 无IO时永久阻塞，直到 eventfd 唤醒
             for (Channel* chan : activated_channels)
             {
-                chan->handleEvent();
+                chan->HandleEvent();
             }
-            doPendingTasks();
+            DoPendingTasks();
         }
     }
 
     void quit()
     {
         quit_ = true;
-        wakeUp();
+        WakeUp();
     }
 
-    void addChannel(Channel* ch) { epoller_.addChannel(ch); }
-    void updateChannel(Channel* ch) { epoller_.updateChannel(ch); }
-    void removeChannel(Channel* ch) { epoller_.removeChannel(ch); }
+    void AddChannel(Channel* ch) { epoller_.AddChannel(ch); }
+    void UpdateChannel(Channel* ch) { epoller_.UpdateChannel(ch); }
+    void RemoveChannel(Channel* ch) { epoller_.RemoveChannel(ch); }
 
-    bool isInLoopThread() const { return std::this_thread::get_id() == thread_id_; }
+    bool IsInLoopThread() const { return std::this_thread::get_id() == thread_id_; }
 
-    void runInLoop(std::function<void()> cb)
+    void RunInLoop(std::function<void()> cb)
     {
-        if (isInLoopThread())
+        if (IsInLoopThread())
         {
             cb();
         }
         else
         {
-            queueInLoop(std::move(cb));
+            QueueInLoop(std::move(cb));
         }
     }
 
     /**
      * @brief 供其他线程投递任务
      */
-    void queueInLoop(std::function<void()> cb)
+    void QueueInLoop(std::function<void()> cb)
     {
         {
             std::lock_guard<std::mutex> lock(mutex_);
             pendingTasks_.push_back(std::move(cb));
         }
-        wakeUp();
+        WakeUp();
     };
 
 private:
@@ -258,7 +258,7 @@ private:
     /**
      * @brief 执行其他线程投递的任务
      */
-    void doPendingTasks()
+    void DoPendingTasks()
     {
         std::vector<std::function<void()>> tasks;
         {
@@ -275,19 +275,19 @@ private:
     /**
      * @brief 往 eventfd 写 8 字节，唤醒阻塞在 epoll_wait 的 IO 线程
      */
-    void wakeUp()
+    void WakeUp()
     {
         uint64_t one = 1;
-        ::write(wakeupChan_->fd(), &one, sizeof(one));
+        ::write(wakeupChan_->Fd(), &one, sizeof(one));
     }
 
     /**
      * @brief 读空 eventfd 的计数器，消耗唤醒事件
      */
-    void handleWakeup()
+    void HandleWakeUp()
     {
         uint64_t val;
-        ::read(wakeupChan_->fd(), &val, sizeof(val));
+        ::read(wakeupChan_->Fd(), &val, sizeof(val));
     }
 };
 
@@ -322,7 +322,7 @@ public:
      *
      * @return EventLoop* 返回指向事件循环的裸指针，供外部投递任务
      */
-    EventLoop* run()
+    EventLoop* Run()
     {
         std::mutex              mtx;
         std::condition_variable cv;
@@ -354,7 +354,7 @@ public:
      *
      * @note 此方法会阻塞调用它的线程，直到事件循环退出
      */
-    void wait()
+    void Wait()
     {
         if (loop_)
         {
@@ -369,7 +369,7 @@ public:
     /**
      * @brief 或许指向事件循环的裸指针
      */
-    EventLoop* getLoop() const { return loop_.get(); }
+    EventLoop* GetLoop() const { return loop_.get(); }
 
 private:
     std::unique_ptr<EventLoop> loop_;
@@ -393,18 +393,18 @@ public:
         : owner_loop_(loop)
     {
         channel_ = make_unique<Channel>(std::move(sock), EPOLLIN | EPOLLET);
-        channel_->setReadCallback([this]() { this->handleRead(); });
-        channel_->setWriteCallback([this]() { this->handleWrite(); });
-        channel_->setErrorCallback([this]() { this->handleError(); });
-        owner_loop_->runInLoop([this]() { this->owner_loop_->addChannel(this->channel_.get()); });
+        channel_->SetReadCallback([this]() { this->HandleRead(); });
+        channel_->SetWriteCallback([this]() { this->HandleWrite(); });
+        channel_->SetErrorCallback([this]() { this->HandleError(); });
+        owner_loop_->RunInLoop([this]() { this->owner_loop_->AddChannel(this->channel_.get()); });
     }
 
-    void setReadCallback(std::function<void(const char*, size_t)> cb) { read_cb_ = std::move(cb); }
-    void setCloseCallback(std::function<void()> cb) { close_cb_ = std::move(cb); }
-    void setErrorCallback(std::function<void()> cb) { error_cb_ = std::move(cb); }
+    void SetReadCallback(std::function<void(const char*, size_t)> cb) { read_cb_ = std::move(cb); }
+    void SetCloseCallback(std::function<void()> cb) { close_cb_ = std::move(cb); }
+    void SetErrorCallback(std::function<void()> cb) { error_cb_ = std::move(cb); }
 
     // 上层发送接口
-    void sendResponse(HttpResponse&& resp)
+    void SendResponse(HttpResponse&& resp)
     {
         std::string data = "HTTP/1.1 " + std::to_string(resp.status_code) + " " + resp.status_message + "\r\n";
         for (auto& h : resp.headers) data += h.first + ": " + h.second + "\r\n";
@@ -414,16 +414,16 @@ public:
         output_buffer_ += data;
 
         // 启用写监听
-        channel_->setEvents(EPOLLIN | EPOLLOUT | EPOLLET);
-        owner_loop_->runInLoop([this]() { owner_loop_->updateChannel(channel_.get()); });
+        channel_->SetEvents(EPOLLIN | EPOLLOUT | EPOLLET);
+        owner_loop_->RunInLoop([this]() { owner_loop_->UpdateChannel(channel_.get()); });
     }
 
     // Channel 回调
-    void handleRead()
+    void HandleRead()
     {
         while (true)
         {
-            ssize_t n = ::read(channel_->fd(), input_buffer_, sizeof(input_buffer_));
+            ssize_t n = ::read(channel_->Fd(), input_buffer_, sizeof(input_buffer_));
             if (n > 0)
             {
                 if (read_cb_)
@@ -434,7 +434,7 @@ public:
                 // 对端关闭
                 if (close_cb_)
                     close_cb_();
-                close();   // 从 epoll 移除（延迟到 doPendingTasks 执行）
+                Close();   // 从 epoll 移除（延迟到 doPendingTasks 执行）
                 return;
             }
             else   // n < 0
@@ -444,17 +444,17 @@ public:
                 // 真正的错误
                 if (error_cb_)
                     error_cb_();
-                close();
+                Close();
                 return;
             }
         }
     }
 
-    void handleWrite()
+    void HandleWrite()
     {
         while (!output_buffer_.empty())
         {
-            ssize_t n = ::write(channel_->fd(), output_buffer_.data(), output_buffer_.size());
+            ssize_t n = ::write(channel_->Fd(), output_buffer_.data(), output_buffer_.size());
             if (n > 0)
             {
                 output_buffer_.erase(0, n);
@@ -465,7 +465,7 @@ public:
                     break;   // 内核缓冲区满，等下次 EPOLLOUT
                 if (error_cb_)
                     error_cb_();
-                close();
+                Close();
                 return;
             }
         }
@@ -473,18 +473,18 @@ public:
         // 全部发完，关闭写监听
         if (output_buffer_.empty())
         {
-            channel_->setEvents(EPOLLIN | EPOLLET);   // 去掉 EPOLLOUT
-            owner_loop_->runInLoop([this]() { owner_loop_->updateChannel(channel_.get()); });
+            channel_->SetEvents(EPOLLIN | EPOLLET);   // 去掉 EPOLLOUT
+            owner_loop_->RunInLoop([this]() { owner_loop_->UpdateChannel(channel_.get()); });
         }
     }
-    void handleError()
+    void HandleError()
     {
         if (error_cb_)
             error_cb_();
-        close();
+        Close();
     }
 
-    void close()
+    void Close()
     {
         if (closed_)
             return;
@@ -493,10 +493,10 @@ public:
         // 如果 close() 是在 handleRead 回调链中（如 onResponse → close）被调用，
         // 同步执行 doClose() 会销毁 channel_，而 handleRead 的 while 循环还在使用它。
         // 延迟到 doPendingTasks 执行，确保当前回调栈完全退出。
-        owner_loop_->queueInLoop([this]() { doClose(); });
+        owner_loop_->QueueInLoop([this]() { DoClose(); });
     }
 
-    int fd() const { return channel_->fd(); }
+    int Fd() const { return channel_->Fd(); }
 
 private:
     std::unique_ptr<Channel> channel_;
@@ -509,9 +509,9 @@ private:
     std::function<void()>                    error_cb_;
     bool                                     closed_ = false;
 
-    void doClose()
+    void DoClose()
     {
-        owner_loop_->removeChannel(channel_.get());
+        owner_loop_->RemoveChannel(channel_.get());
         channel_.reset();
     }
 };
@@ -526,10 +526,10 @@ public:
         // HttpReqBuilder 的响应回调：序列化后交给 Connection 发送
         auto onResponse = [this](HttpResponse&& resp)
         {
-            connection_->sendResponse(std::move(resp));
+            connection_->SendResponse(std::move(resp));
             if (!builder_->shouldKeepAlive())
             {
-                connection_->close();   // Connection 会在 EventLoop 中安全关闭
+                connection_->Close();   // Connection 会在 EventLoop 中安全关闭
             }
             else
             {
@@ -544,23 +544,23 @@ public:
         parser_ = make_unique<HttpParser>(builder_.get());
 
         // 设置 Connection 的回调
-        connection_->setReadCallback([this](const char* data, size_t len) { this->onData(data, len); });
-        connection_->setCloseCallback([this]() { this->onClose(); });
-        connection_->setErrorCallback([this]() { this->onClose(); });
+        connection_->SetReadCallback([this](const char* data, size_t len) { this->OnData(data, len); });
+        connection_->SetCloseCallback([this]() { this->OnClose(); });
+        connection_->SetErrorCallback([this]() { this->OnClose(); });
     }
 
 private:
-    void onData(const char* data, size_t len) { parser_->feed(data, len); }
+    void OnData(const char* data, size_t len) { parser_->feed(data, len); }
 
-    void onClose()
+    void OnClose()
     {
         // 通知 Server 清理此 Session
         if (close_cb_)
-            close_cb_(connection_->fd());
+            close_cb_(connection_->Fd());
     }
 
 public:
-    void setCloseCallback(std::function<void(int)> cb) { close_cb_ = std::move(cb); }
+    void SetCloseCallback(std::function<void(int)> cb) { close_cb_ = std::move(cb); }
 
 private:
     Connection*                     connection_;   // 不拥有
@@ -609,15 +609,15 @@ public:
     /**
      * @brief 在 Acceptor 的事件循环里面监听
      */
-    void listen()
+    void Listen()
     {
         // set read callback to accept new Connection
-        accept_channel_->setReadCallback(
+        accept_channel_->SetReadCallback(
             [this]()
             {
                 struct sockaddr_in client_addr;
                 socklen_t          client_len = sizeof(client_addr);
-                int                fd = ::accept(accept_channel_->fd(), (struct sockaddr*)&client_addr, &client_len);
+                int                fd = ::accept(accept_channel_->Fd(), (struct sockaddr*)&client_addr, &client_len);
                 if (fd < 0)
                 {
                     if (errno != EAGAIN && errno != EWOULDBLOCK)
@@ -639,14 +639,14 @@ public:
             });
 
         // 将 accept channel 注册到主 EventLoop 的 epoll
-        loop_->addChannel(accept_channel_.get());
+        loop_->AddChannel(accept_channel_.get());
     }
 
-    void close() { ::shutdown(accept_channel_->fd(), SHUT_WR); }
-    void setNewConnectionCallback(std::function<void(int)> cb) { newConnectionCallback_ = std::move(cb); }
+    void Close() { ::shutdown(accept_channel_->Fd(), SHUT_WR); }
+    void SetNewConnectionCallback(std::function<void(int)> cb) { newConnectionCallback_ = std::move(cb); }
 
-    std::string getListenAddr() const { return listAddr_; }
-    int         getPort() const { return port_; }
+    std::string GetListenAddr() const { return listAddr_; }
+    int         GetPort() const { return port_; }
 
 private:
     std::string              listAddr_;
@@ -664,7 +664,7 @@ public:
         , running_(false)
     {
         logger_ = spdlog::basic_logger_mt("single_reactor_Server_Logger", "logs/single_reactor_server.log");
-        router_ = register_router(static_dir_);
+        router_ = RegisterRouter(static_dir_);
         thread_pool_ = make_unique<ThreadPool>(pool_size);
         main_loop_ = make_unique<EventLoop>();
         acceptor_ = make_unique<Acceptor>(addr, port, main_loop_.get());
@@ -674,10 +674,10 @@ public:
         }
     }
 
-    ~Server() { stop(); }
+    ~Server() { Stop(); }
 
-    bool start();
-    void stop();
+    bool Start();
+    void Stop();
 
 private:
     std::string                                   static_dir_;
@@ -692,26 +692,23 @@ private:
     std::map<int, std::unique_ptr<Connection>>    connections_;   // fd -> connection
     std::map<int, std::unique_ptr<HttpSession>>   sessions_;      // fd -> session
 
-    void       run();
-    bool       setup_socket();   // 创建并设置 socket
-    void       new_connection(int fd);
-    void       handle_client(int client_fd);   // 处理新连接上的请求
-    void       remove_connection();            // 清理连接
-    EventLoop* getNextEventloop();
+    void       Run();
+    void       HandleNewConnection(int fd);
+    EventLoop* GetNextEventloop();
 
-    std::unique_ptr<Router>  register_router(std::string& dir);                    // 注册路由
-    std::vector<std::string> get_html_files_recursively(const std::string& dir);   // 注册路由的辅助函数
+    std::unique_ptr<Router>  RegisterRouter(std::string& dir);                    // 注册路由
+    std::vector<std::string> GetHtmlFilesRecursively(const std::string& dir);   // 注册路由的辅助函数
 };
 
-bool Server::start()
+bool Server::Start()
 {
     running_ = true;
-    server_thread = std::thread(&Server::run, this);
-    logger_->info("Server started on {}:{}", acceptor_->getListenAddr(), acceptor_->getPort());
+    server_thread = std::thread(&Server::Run, this);
+    logger_->info("Server started on {}:{}", acceptor_->GetListenAddr(), acceptor_->GetPort());
     return true;
 }
 
-void Server::stop()
+void Server::Stop()
 {
     if (running_)
     {
@@ -719,11 +716,11 @@ void Server::stop()
         main_loop_->quit();
         for (auto& reactor : io_threads_)
         {
-            reactor->wait();
+            reactor->Wait();
         }
 
 
-        acceptor_->close();
+        acceptor_->Close();
 
         // 等待 server_thread 线程退出
         if (server_thread.joinable())
@@ -736,31 +733,31 @@ void Server::stop()
     }
 }
 
-void Server::run()
+void Server::Run()
 {
     // 1. 启动所有 Sub Reactor 线程，主线程阻塞直到每个 EventLoop 就绪
     for (auto& t : io_threads_)
     {
-        t->run();
+        t->Run();
     }
 
     // 2. 将 Acceptor 的 listen channel 注册到 main_loop，启动主事件循环
-    acceptor_->setNewConnectionCallback([this](int fd) { this->new_connection(fd); });
-    acceptor_->listen();
+    acceptor_->SetNewConnectionCallback([this](int fd) { this->HandleNewConnection(fd); });
+    acceptor_->Listen();
     main_loop_->loop();   // 阻塞直到 quit
 }
 
-void Server::new_connection(int fd)
+void Server::HandleNewConnection(int fd)
 {
-    EventLoop* loop = getNextEventloop();
+    EventLoop* loop = GetNextEventloop();
     auto       client_sock = make_unique<Socket>(fd);
     auto       conn = make_unique<Connection>(std::move(client_sock), loop);        // Connection 创建时自动注册到 EventLoop
     auto       session = make_unique<HttpSession>(conn.get(), *router_, logger_);   // 把Connection绑定到Session
-    session->setCloseCallback(
+    session->SetCloseCallback(
         [this](int fd)
         {
             // 关闭回调：在 main_loop 中清理连接和会话
-            main_loop_->queueInLoop(
+            main_loop_->QueueInLoop(
                 [this, fd]()
                 {
                     connections_.erase(fd);
@@ -772,10 +769,10 @@ void Server::new_connection(int fd)
     sessions_[fd] = std::move(session);
 }
 
-EventLoop* Server::getNextEventloop()
+EventLoop* Server::GetNextEventloop()
 {
     static int i = 0;
-    EventLoop* next = io_threads_[i]->getLoop();
+    EventLoop* next = io_threads_[i]->GetLoop();
     i = (i + 1) % io_threads_.size();
     return next;
 }
@@ -788,9 +785,9 @@ EventLoop* Server::getNextEventloop()
  *
  * @return 路由对象指针
  */
-std::unique_ptr<Router> Server::register_router(std::string& dir)
+std::unique_ptr<Router> Server::RegisterRouter(std::string& dir)
 {
-    std::vector<std::string> html_files = get_html_files_recursively(dir);
+    std::vector<std::string> html_files = GetHtmlFilesRecursively(dir);
     std::unique_ptr<Router>  router(new Router());
     router->addRoute(HttpMethod::GET, "/", [dir, this]() { return std::unique_ptr<RequestHandler>(new HtmlFileHandler(dir + "/index.html", logger_)); });
     for (const auto& file_path : html_files)
@@ -811,7 +808,7 @@ std::unique_ptr<Router> Server::register_router(std::string& dir)
  *
  * @return HTML文件路径列表
  */
-std::vector<std::string> Server::get_html_files_recursively(const std::string& dir)
+std::vector<std::string> Server::GetHtmlFilesRecursively(const std::string& dir)
 {
     std::vector<std::string> html_files;
     std::stack<std::string>  dirs;
@@ -860,7 +857,7 @@ bool g_quit = false;   // 全局退出标志
 /**
  * sigint 的信号处理函数
  */
-void sigint_handler(int signum)
+void SigintHandler(int signum)
 {
     (void)signum;   // unused
     g_quit = true;
@@ -886,7 +883,7 @@ handler_t Signal(int signum, handler_t handler)
     return old_act.sa_handler;
 }
 
-void usage(const char* prog)
+void Usage(const char* prog)
 {
     std::cout << "Usage: " << prog << " [options]\n"
               << "Options:\n"
@@ -900,7 +897,7 @@ void usage(const char* prog)
 int main(int argc, char* argv[])
 {
     spdlog::set_level(spdlog::level::debug);
-    Signal(SIGINT, sigint_handler);
+    Signal(SIGINT, SigintHandler);
 
     std::string address = "127.0.0.1";
     int         port = 7788;
@@ -925,16 +922,16 @@ int main(int argc, char* argv[])
                 reactor_number = std::stoi(optarg);
                 break;
             case 'h':
-                usage(argv[0]);
+                Usage(argv[0]);
                 return 0;
             default:
-                usage(argv[0]);
+                Usage(argv[0]);
                 return 1;
         }
     }
 
     Server server(address, port, "web_root", pool_size, reactor_number);
-    if (!server.start())
+    if (!server.Start())
     {
         std::cout << "Failed to start server" << std::endl;
         return 1;
@@ -946,6 +943,6 @@ int main(int argc, char* argv[])
         pause();   // 等待信号
     }
     std::cout << "Received SIGINT, stopping server..." << std::endl;
-    server.stop();
+    server.Stop();
     return 0;
 }
