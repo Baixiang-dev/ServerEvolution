@@ -10,16 +10,17 @@
 #include <stack>
 #include <string>
 #include <sys/epoll.h>
-#include <sys/signal.h>
+
+// Third-party code
+#include "ThreadPool.h"
+#include "spdlog/sinks/basic_file_sink.h"
+#include "spdlog/spdlog.h"
 
 #include "http/HttpBuilder.h"
 #include "http/handlers/HttpHandlers.h"
 #include "http/router/HttpRouter.h"
 #include "io/socket/Socket.h"
-
-#include "ThreadPool.h"
-#include "spdlog/sinks/basic_file_sink.h"
-#include "spdlog/spdlog.h"
+#include "utils/Signal.h"
 
 /** 自定义 make_unique 方便使用 */
 template<typename T, typename... Args> std::unique_ptr<T> make_unique(Args&&... args)
@@ -266,9 +267,9 @@ private:
     bool SetupSocket();   // 创建并设置 socket
     void AcceptConnection();
     void HandleNewConnection(int client_fd);   // 处理新连接上的请求
-    void RemoveConnection();            // 清理连接
+    void RemoveConnection();                   // 清理连接
 
-    std::unique_ptr<Router>  RegisterRouter(std::string& dir);                    // 注册路由
+    std::unique_ptr<Router>  RegisterRouter(std::string& dir);                  // 注册路由
     std::vector<std::string> GetHtmlFilesRecurisvely(const std::string& dir);   // 注册路由的辅助函数
 };
 
@@ -521,38 +522,6 @@ std::vector<std::string> Server::GetHtmlFilesRecurisvely(const std::string& dir)
         closedir(dir);
     }
     return html_files;
-}
-
-
-bool g_quit = false;   // 全局退出标志
-
-/**
- * sigint 的信号处理函数
- */
-void SigintHandler(int signum)
-{
-    (void)signum;   // unused
-    g_quit = true;
-}
-
-using handler_t = void (*)(int);
-/** TODO: 提取为公共函数 */
-/**
- * 为指定信号注册信号处理函数
- */
-handler_t Signal(int signum, handler_t handler)
-{
-    struct sigaction act, old_act;
-    act.sa_handler = handler;
-    sigemptyset(&act.sa_mask);
-    act.sa_flags = 0;
-
-    if (sigaction(signum, &act, &old_act) < 0)
-    {
-        return SIG_ERR;
-    }
-
-    return old_act.sa_handler;
 }
 
 void Usage(const char* prog)

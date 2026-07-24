@@ -54,11 +54,18 @@ target_include_directories(project_includes INTERFACE
     ${PROJECT_SOURCE_DIR}/third_party
 )
 
+# ============================= common utils ==========================================
+add_library(utils STATIC
+    src/utils/Signal.cc
+)
+target_include_directories(utils PUBLIC ${PROJECT_SOURCE_DIR}/src)
+target_link_libraries(utils PUBLIC project_options project_includes)
+
 # ============================= helper function ========================================
 # 定义一个函数，用于创建可执行目标文件，并设置其输出路径
 function(add_server_app target source_rel out_subdir)
   add_executable(${target} "${PROJECT_SOURCE_DIR}/${source_rel}") # 创建可执行目标文件
-  target_link_libraries(${target} PRIVATE project_options project_includes project_deps) # 继承公共设置
+  target_link_libraries(${target} PRIVATE project_options project_includes project_deps utils) # 继承公共设置
 endfunction()
 
 add_server_app(iterativer_server apps/00_iterative/Iterative_server.cc iterativer_server)

@@ -1,19 +1,19 @@
 #include <dirent.h>
 #include <iostream>
-#include <signal.h>
 #include <stack>
 #include <vector>
 
 // Third-party code
-#include <ThreadPool.h>
-#include <spdlog/sinks/basic_file_sink.h>
-#include <spdlog/spdlog.h>
+#include "ThreadPool.h"
+#include "spdlog/sinks/basic_file_sink.h"
+#include "spdlog/spdlog.h"
 
 #include "http/HttpBuilder.h"
 #include "http/handlers/HttpHandlers.h"
 #include "http/parser/HttpParser.h"
 #include "http/router/HttpRouter.h"
 #include "io/socket/Socket.h"
+#include "utils/Signal.h"
 
 /**
  * 带线程池的多线程服务器实现
@@ -51,11 +51,11 @@ private:
     std::thread                     accept_thread_;   // 接受连接的线程
     ThreadPool                      thread_pool_;     // 线程池
 
-    bool SetupSocket();                                       // 创建并设置socket
-    void AcceptConnection();                                  // 侦听并接受连接
+    bool SetupSocket();                                              // 创建并设置socket
+    void AcceptConnection();                                         // 侦听并接受连接
     void HandleNewConnection(std::unique_ptr<Socket> client_sock);   // 处理新连接
 
-    std::unique_ptr<Router>  RegisterRouter(std::string& dir);                    // 注册路由
+    std::unique_ptr<Router>  RegisterRouter(std::string& dir);                  // 注册路由
     std::vector<std::string> GetHtmlFilesRecursively(const std::string& dir);   // 注册路由的辅助函数
 };
 
@@ -268,13 +268,7 @@ std::vector<std::string> Server::GetHtmlFilesRecursively(const std::string& dir)
     return html_files;
 }
 
-using handler_t = void (*)(int);
-// 前向声明
-handler_t Signal(int signum, handler_t handler);
-void      SigintHandler(int signum);
-void      Usage(const char* prog);
-// 全局退出标志
-std::atomic<bool> g_quit(false);
+void Usage(const char* prog);
 
 int main(int argc, char* argv[])
 {
@@ -320,26 +314,6 @@ int main(int argc, char* argv[])
     std::cout << "Received SIGINT, shutting down server..." << std::endl;
     server.Stop();
     return 0;
-}
-
-/*TODO: 提取为公共函数 */
-handler_t Signal(int signum, handler_t handler)
-{
-    struct sigaction act, old_act;
-    act.sa_handler = handler;
-    sigemptyset(&act.sa_mask);
-    act.sa_flags = 0;
-    if (sigaction(signum, &act, &old_act) < 0)
-    {
-        return SIG_ERR;
-    }
-    return old_act.sa_handler;
-}
-
-void SigintHandler(int signum)
-{
-    (void)signum;   // unused
-    g_quit = true;
 }
 
 void Usage(const char* prog)
