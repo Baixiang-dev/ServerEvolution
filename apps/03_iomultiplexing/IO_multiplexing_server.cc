@@ -2,20 +2,20 @@
 #include <iostream>
 #include <map>
 #include <memory>
-#include <signal.h>
 #include <stack>
 #include <string>
 #include <sys/epoll.h>
 
 // Third-party code
-#include <spdlog/sinks/basic_file_sink.h>
-#include <spdlog/spdlog.h>
+#include "spdlog/sinks/basic_file_sink.h"
+#include "spdlog/spdlog.h"
 
 #include "http/HttpBuilder.h"
 #include "http/handlers/HttpHandlers.h"
 #include "http/parser/HttpParser.h"
 #include "http/router/HttpRouter.h"
 #include "io/socket/Socket.h"
+#include "utils/Signal.h"
 
 /**
  * Http连接的抽象, 用于IO多路复用中管理连接状态
@@ -76,7 +76,7 @@ private:
     void AcceptConnectionPoll();
     void AcceptConnectionEpoll();
 
-    std::unique_ptr<Router>  RegisterRouter(std::string& dir);                    // 注册路由
+    std::unique_ptr<Router>  RegisterRouter(std::string& dir);                  // 注册路由
     std::vector<std::string> GetHtmlFilesRecursively(const std::string& dir);   // 注册路由的辅助函数
 };
 
@@ -379,39 +379,6 @@ std::vector<std::string> Server::GetHtmlFilesRecursively(const std::string& dir)
         closedir(dir);
     }
     return html_files;
-}
-
-// 全局退出标识
-std::atomic<bool> g_quit(false);
-
-using handler_t = void (*)(int);
-
-/* TODO: 提取为公共函数 */
-/**
- * 为指定信号注册信号处理函数
- */
-handler_t Signal(int signum, handler_t handler)
-{
-    struct sigaction act, old_act;
-    act.sa_handler = handler;
-    sigemptyset(&act.sa_mask);
-    act.sa_flags = 0;
-
-    if (sigaction(signum, &act, &old_act) < 0)
-    {
-        return SIG_ERR;
-    }
-
-    return old_act.sa_handler;
-}
-
-/**
- * sigint 的信号处理函数
- */
-void SigintHandler(int signum)
-{
-    (void)signum;   // unused
-    g_quit = true;
 }
 
 void Usage(const char* prog)
