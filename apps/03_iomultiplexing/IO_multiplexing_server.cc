@@ -51,13 +51,13 @@ public:
         , running_(false)
     {
         logger_ = spdlog::basic_logger_mt("io_multiplexing_Server_Logger", "logs/io_multiplexing_server.log");
-        router_ = register_router(static_dir_);
+        router_ = RegisterRouter(static_dir_);
     }
 
-    ~Server() { stop(); }
+    ~Server() { Stop(); }
 
-    bool start();
-    void stop();
+    bool Start();
+    void Stop();
 
 private:
     std::string                     address_;      // 服务器监听地址
@@ -69,23 +69,23 @@ private:
     std::shared_ptr<spdlog::logger> logger_;
     std::thread                     server_thread;   // 服务器主线程
 
-    bool setup_socket();        // 创建并设置 socket
-    void accept_connection();   // 侦听并接收连接
+    bool SetupSocket();        // 创建并设置 socket
+    void AcceptConnection();   // 侦听并接收连接
 
-    void accept_connection_select();
-    void accept_connection_poll();
-    void accept_connection_epoll();
+    void AcceptConnectionSelect();
+    void AcceptConnectionPoll();
+    void AcceptConnectionEpoll();
 
-    std::unique_ptr<Router>  register_router(std::string& dir);                    // 注册路由
-    std::vector<std::string> get_html_files_recursively(const std::string& dir);   // 注册路由的辅助函数
+    std::unique_ptr<Router>  RegisterRouter(std::string& dir);                    // 注册路由
+    std::vector<std::string> GetHtmlFilesRecursively(const std::string& dir);   // 注册路由的辅助函数
 };
 
 /**
  * 启动服务器
  */
-bool Server::start()
+bool Server::Start()
 {
-    if (!setup_socket())
+    if (!SetupSocket())
     {
         logger_->error("Failed to setup socket");
         return false;
@@ -98,7 +98,7 @@ bool Server::start()
     }
 
     running_ = true;
-    server_thread = std::thread(&Server::accept_connection, this);
+    server_thread = std::thread(&Server::AcceptConnection, this);
     logger_->info("Server started on {}:{}", address_, port_);
     return true;
 }
@@ -106,7 +106,7 @@ bool Server::start()
 /**
  * 停止服务器
  */
-void Server::stop()
+void Server::Stop()
 {
     if (running_)
     {
@@ -132,7 +132,7 @@ void Server::stop()
  * @details
  *  创建Socket，设置地址重用选项，绑定地址和端口
  */
-bool Server::setup_socket()
+bool Server::SetupSocket()
 {
     socket_ = std::unique_ptr<Socket>(new Socket(::socket(AF_INET, SOCK_STREAM, 0)));
     if (!socket_ || socket_->fd() < 0)
@@ -163,26 +163,26 @@ bool Server::setup_socket()
 /**
  * 接收并处理新连接
  */
-void Server::accept_connection()
+void Server::AcceptConnection()
 {
     /** 使用select / epoll / poll 循环处理 */
-    accept_connection_epoll();
+    AcceptConnectionEpoll();
 }
 
 /**
  * 使用 select 处理连接
  */
-void Server::accept_connection_select() {}
+void Server::AcceptConnectionSelect() {}
 
 /**
  * 使用 poll 处理连接
  */
-void Server::accept_connection_poll() {}
+void Server::AcceptConnectionPoll() {}
 
 /**
  * 使用 epoll 处理连接
  */
-void Server::accept_connection_epoll()
+void Server::AcceptConnectionEpoll()
 {
     int epoll_fd = epoll_create1(0);
     if (epoll_fd == -1)
@@ -315,9 +315,9 @@ void Server::accept_connection_epoll()
  *
  * @return 路由对象指针
  */
-std::unique_ptr<Router> Server::register_router(std::string& dir)
+std::unique_ptr<Router> Server::RegisterRouter(std::string& dir)
 {
-    std::vector<std::string> html_files = get_html_files_recursively(dir);
+    std::vector<std::string> html_files = GetHtmlFilesRecursively(dir);
     std::unique_ptr<Router>  router(new Router());
     router->addRoute(HttpMethod::GET, "/", [dir, this]() { return std::unique_ptr<RequestHandler>(new HtmlFileHandler(dir + "/index.html", logger_)); });
     for (const auto& file_path : html_files)
@@ -338,7 +338,7 @@ std::unique_ptr<Router> Server::register_router(std::string& dir)
  *
  * @return HTML文件路径列表
  */
-std::vector<std::string> Server::get_html_files_recursively(const std::string& dir)
+std::vector<std::string> Server::GetHtmlFilesRecursively(const std::string& dir)
 {
     std::vector<std::string> html_files;
     std::stack<std::string>  dirs;
@@ -408,13 +408,13 @@ handler_t Signal(int signum, handler_t handler)
 /**
  * sigint 的信号处理函数
  */
-void sigint_handler(int signum)
+void SigintHandler(int signum)
 {
     (void)signum;   // unused
     g_quit = true;
 }
 
-void usage(const char* prog)
+void Usage(const char* prog)
 {
     std::cout << "Usage: " << prog << " [options]\n"
               << "Options:\n"
@@ -426,7 +426,7 @@ void usage(const char* prog)
 int main(int argc, char* argv[])
 {
     spdlog::set_level(spdlog::level::debug);
-    Signal(SIGINT, sigint_handler);
+    Signal(SIGINT, SigintHandler);
     std::string address = "127.0.0.1";
     int         port = 7788;
 
@@ -442,16 +442,16 @@ int main(int argc, char* argv[])
                 port = std::stoi(optarg);
                 break;
             case 'h':
-                usage(argv[0]);
+                Usage(argv[0]);
                 return 0;
             default:
-                usage(argv[0]);
+                Usage(argv[0]);
                 return 1;
         }
     }
 
     Server server(address, port);
-    if (!server.start())
+    if (!server.Start())
     {
         std::cout << "Failed to start server" << std::endl;
         return 1;
@@ -463,6 +463,6 @@ int main(int argc, char* argv[])
     }
 
     std::cout << "Received SIGINT, shutting down server..." << std::endl;
-    server.stop();
+    server.Stop();
     return 0;
 }
