@@ -265,7 +265,14 @@ std::vector<std::string> Server::GetHtmlFilesRecursively(const std::string& dir)
     return html_files;
 }
 
-void Usage(const char* prog);
+void Usage(const char* prog)
+{
+    std::cout << "Usage: " << prog << " [options]\n"
+              << "Options:\n"
+              << "  -a <address>     bind address (default 127.0.0.1)\n"
+              << "  -p <port>        target port (default 7788)\n"
+              << "  -h <help>        display this help message\n";
+}
 
 int main(int argc, char* argv[])
 {
@@ -308,13 +315,4 @@ int main(int argc, char* argv[])
     std::cout << "Received SIGINT, shutting down server..." << std::endl;
     server.Stop();
     return 0;
-}
-
-void Usage(const char* prog)
-{
-    std::cout << "Usage: " << prog << " [options]\n"
-              << "Options:\n"
-              << "  -a <address>     bind address (default 127.0.0.1)\n"
-              << "  -p <port>        target port (default 7788)\n"
-              << "  -h <help>        display this help message\n";
 }
