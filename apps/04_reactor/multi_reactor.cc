@@ -384,7 +384,7 @@ private:
  * @details Server accept 时创建Connection，然后分发Connection到某个EventLoop，应用层业务使用 Connectoin
  * 提供的接口读写数据。在出现错误或连接关闭时，在所属的EventLoop执行清理(因为EventLoop可能还在使用Channel，在其他地方关闭会影响EventLoop中的使用)。
  */
-class Connection
+class Connection : public std::enable_shared_from_this<Connection>
 {
 public:
     /**
@@ -401,7 +401,7 @@ public:
     }
 
     void SetReadCallback(std::function<void(const char*, size_t)> cb) { read_cb_ = std::move(cb); }
-    void SetCloseCallback(std::function<void()> cb) { close_cb_ = std::move(cb); }
+    void SetCloseCallback(std::function<void(std::shared_ptr<Connection>)> cb) { close_cb_ = std::move(cb); }
     void SetErrorCallback(std::function<void()> cb) { error_cb_ = std::move(cb); }
 
     // 上层发送接口
@@ -433,9 +433,7 @@ public:
             else if (n == 0)
             {
                 // 对端关闭
-                if (close_cb_)
-                    close_cb_();
-                Close();   // 从 epoll 移除（延迟到 doPendingTasks 执行）
+                HandleClose();
                 return;
             }
             else   // n < 0
@@ -443,9 +441,7 @@ public:
                 if (errno == EAGAIN || errno == EWOULDBLOCK)
                     break;   // 读完
                 // 真正的错误
-                if (error_cb_)
-                    error_cb_();
-                Close();
+                HandleError();
                 return;
             }
         }
@@ -464,9 +460,7 @@ public:
             {
                 if (errno == EAGAIN || errno == EWOULDBLOCK)
                     break;   // 内核缓冲区满，等下次 EPOLLOUT
-                if (error_cb_)
-                    error_cb_();
-                Close();
+                HandleError();
                 return;
             }
         }
@@ -482,22 +476,24 @@ public:
     {
         if (error_cb_)
             error_cb_();
-        Close();
+        HandleClose();
     }
 
-    void Close()
+    void HandleClose()
     {
         if (closed_)
             return;
         closed_ = true;
-        // 使用 queueInLoop 而非 runInLoop：
-        // 如果 close() 是在 handleRead 回调链中（如 onResponse → close）被调用，
-        // 同步执行 doClose() 会销毁 channel_，而 handleRead 的 while 循环还在使用它。
-        // 延迟到 doPendingTasks 执行，确保当前回调栈完全退出。
-        owner_loop_->QueueInLoop([this]() { DoClose(); });
+        auto guard_this = shared_from_this();   // 避免 earse connection 后 直接释放导致的自释放问题
+        if (close_cb_)
+        {
+            close_cb_(guard_this);
+        }
     }
 
-    int Fd() const { return channel_->Fd(); }
+    int        Fd() const { return channel_->Fd(); }
+    EventLoop* GetEventloop() const { return owner_loop_; }
+    void       ConnectionDestroyed() { owner_loop_->RemoveChannel(channel_.get()); }
 
 private:
     std::unique_ptr<Channel> channel_;
@@ -505,16 +501,10 @@ private:
     std::string              output_buffer_;
     EventLoop*               owner_loop_;   // Connection 所属的 Eventloop_;
 
-    std::function<void(const char*, size_t)> read_cb_;
-    std::function<void()>                    close_cb_;
-    std::function<void()>                    error_cb_;
-    bool                                     closed_ = false;
-
-    void DoClose()
-    {
-        owner_loop_->RemoveChannel(channel_.get());
-        channel_.reset();
-    }
+    std::function<void(const char*, size_t)>         read_cb_;
+    std::function<void(std::shared_ptr<Connection>)> close_cb_;
+    std::function<void()>                            error_cb_;
+    bool                                             closed_ = false;
 };
 
 class HttpSession
@@ -530,7 +520,7 @@ public:
             connection_->SendResponse(std::move(resp));
             if (!builder_->shouldKeepAlive())
             {
-                connection_->Close();   // Connection 会在 EventLoop 中安全关闭
+                connection_->HandleClose();   // Connection 会在 EventLoop 中安全关闭
             }
             else
             {
@@ -546,29 +536,15 @@ public:
 
         // 设置 Connection 的回调
         connection_->SetReadCallback([this](const char* data, size_t len) { this->OnData(data, len); });
-        connection_->SetCloseCallback([this]() { this->OnClose(); });
-        connection_->SetErrorCallback([this]() { this->OnClose(); });
     }
 
 private:
     void OnData(const char* data, size_t len) { parser_->feed(data, len); }
 
-    void OnClose()
-    {
-        // 通知 Server 清理此 Session
-        if (close_cb_)
-            close_cb_(connection_->Fd());
-    }
-
-public:
-    void SetCloseCallback(std::function<void(int)> cb) { close_cb_ = std::move(cb); }
-
-private:
     Connection*                     connection_;   // 不拥有
     std::unique_ptr<HttpReqBuilder> builder_;
     std::unique_ptr<HttpParser>     parser_;
     std::shared_ptr<spdlog::logger> logger_;
-    std::function<void(int)>        close_cb_;
 };
 
 class Acceptor
@@ -664,7 +640,7 @@ public:
         : static_dir_(std::move(static_dir))
         , running_(false)
     {
-        logger_ = spdlog::basic_logger_mt("single_reactor_Server_Logger", "logs/single_reactor_server.log");
+        logger_ = spdlog::basic_logger_mt("multi_reactor_Server_Logger", "logs/multi_reactor_server.log");
         router_ = RegisterRouter(static_dir_);
         thread_pool_ = make_unique<ThreadPool>(pool_size);
         main_loop_ = make_unique<EventLoop>();
@@ -680,6 +656,9 @@ public:
     bool Start();
     void Stop();
 
+    void ConnectionClosed(const std::shared_ptr<Connection> conn);
+    void HandleCloseInLoop(const std::shared_ptr<Connection> conn);
+
 private:
     std::string                                   static_dir_;
     bool                                          running_;
@@ -690,7 +669,7 @@ private:
     std::unique_ptr<EventLoop>                    main_loop_;
     std::vector<std::unique_ptr<EventLoopThread>> io_threads_;
     std::unique_ptr<Acceptor>                     acceptor_;
-    std::map<int, std::unique_ptr<Connection>>    connections_;   // fd -> connection
+    std::map<int, std::shared_ptr<Connection>>    connections_;   // fd -> connection
     std::map<int, std::unique_ptr<HttpSession>>   sessions_;      // fd -> session
 
     void       Run();
@@ -754,20 +733,37 @@ void Server::HandleNewConnection(int fd)
     auto       client_sock = make_unique<Socket>(fd);
     auto       conn = make_unique<Connection>(std::move(client_sock), loop);        // Connection 创建时自动注册到 EventLoop
     auto       session = make_unique<HttpSession>(conn.get(), *router_, logger_);   // 把Connection绑定到Session
-    session->SetCloseCallback(
-        [this](int fd)
+    conn->SetCloseCallback(
+        [this](std::shared_ptr<Connection> conn)
         {
             // 关闭回调：在 main_loop 中清理连接和会话
-            main_loop_->QueueInLoop(
-                [this, fd]()
-                {
-                    connections_.erase(fd);
-                    sessions_.erase(fd);
-                });
+            ConnectionClosed(conn);
         });
 
     connections_[fd] = std::move(conn);
     sessions_[fd] = std::move(session);
+}
+
+void Server::ConnectionClosed(const std::shared_ptr<Connection> conn)
+{
+    if (main_loop_->IsInLoopThread())
+    {
+        HandleCloseInLoop(conn);
+    }
+    else
+    {
+        main_loop_->QueueInLoop([this, conn]() { HandleCloseInLoop(conn); });
+    }
+}
+
+void Server::HandleCloseInLoop(const std::shared_ptr<Connection> conn)
+{
+    // server loop 内 earse connection 避免竞态
+    connections_.erase(conn->Fd());
+    sessions_.erase(conn->Fd());
+    // connection 对应的 loop 内执行清理操作，避免当前回调栈还没结束就清理掉channel，导致use-after-free
+    auto conn_loop = conn->GetEventloop();
+    conn_loop->QueueInLoop([conn]() { conn->ConnectionDestroyed(); });
 }
 
 EventLoop* Server::GetNextEventloop()
