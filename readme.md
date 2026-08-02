@@ -1,8 +1,10 @@
 # ServerEvolution
 
-这是一个从零开始构建的 C++ 服务器学习项目。
+> **Building a Modern C++ HTTP Server — From Blocking I/O to Reactor & Proactor**
 
-本项目旨在从一个最基本的迭代服务器出发，逐步完善至现代的 Reactor 模型。通过这一过程，探究现代服务器架构中各种技术（如线程池、Epoll、Reactor等）是为了解决什么具体问题。
+一个从零开始、逐步演进的 C++ HTTP 服务器学习项目。通过代码迭代，展示现代服务器架构中线程池、IO 多路复用、Reactor 模型等技术解决了什么问题。
+
+---
 
 ## 项目背景
 
