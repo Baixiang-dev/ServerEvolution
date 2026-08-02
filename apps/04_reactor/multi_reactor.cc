@@ -729,6 +729,7 @@ void Server::Run()
 
 void Server::HandleNewConnection(int fd)
 {
+    logger_->debug("Received a new Connection: {}", fd);
     EventLoop* loop = GetNextEventloop();
     auto       client_sock = make_unique<Socket>(fd);
     auto       conn = make_unique<Connection>(std::move(client_sock), loop);        // Connection 创建时自动注册到 EventLoop
@@ -742,6 +743,7 @@ void Server::HandleNewConnection(int fd)
 
     connections_[fd] = std::move(conn);
     sessions_[fd] = std::move(session);
+    logger_->debug("Established a new Connection: {}", fd);
 }
 
 void Server::ConnectionClosed(const std::shared_ptr<Connection> conn)
@@ -758,6 +760,7 @@ void Server::ConnectionClosed(const std::shared_ptr<Connection> conn)
 
 void Server::HandleCloseInLoop(const std::shared_ptr<Connection> conn)
 {
+    logger_->debug("Earse Connection : {}", conn->Fd());
     // server loop 内 earse connection 避免竞态
     connections_.erase(conn->Fd());
     sessions_.erase(conn->Fd());
