@@ -1,14 +1,17 @@
 #pragma once
+#include <algorithm>
 #include <cstring>
 #include <fstream>
 
 #include "http/router/HttpRouter.h"
 
-// html文件处理器
-class HtmlFileHandler : public RequestHandler
+/**
+ * @brief 处理静态文件请求
+ */
+class StaticFileHandler : public RequestHandler
 {
 public:
-    HtmlFileHandler(const std::string& file_path, std::shared_ptr<spdlog::logger> logger)
+    StaticFileHandler(const std::string& file_path, std::shared_ptr<spdlog::logger> logger)
         : file_path_(file_path)
         , logger_(logger)
     {
@@ -42,9 +45,23 @@ public:
             response_.body.append(buffer, file.gcount());
         }
 
+        std::string mime;
+
+        auto ext = file_path_.substr(file_path_.find_last_of('.') + 1);
+        std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+        auto it = mime_map.find(ext);
+        if (it != mime_map.end())
+        {
+            mime = it->second;
+        }
+        else
+        {
+            mime = "application/octet-stream";
+        }
+
         response_.status_code = 200;
         response_.status_message = "OK";
-        response_.headers["Content-Type"] = "text/html";
+        response_.headers["Content-Type"] = mime;
         response_.headers["Content-Length"] = std::to_string(response_.body.size());
     }
 
@@ -55,4 +72,19 @@ public:
 private:
     std::string                     file_path_;
     std::shared_ptr<spdlog::logger> logger_;
+
+    static const std::unordered_map<std::string, std::string> mime_map;
+};
+
+const std::unordered_map<std::string, std::string> StaticFileHandler::mime_map = {
+    {"html", "text/html"},
+    {"css", "text/css"},
+    {"js", "application/javascript"},
+    {"json", "application/json"},
+    {"png", "image/png"},
+    {"jpg", "image/jpeg"},
+    {"jpeg", "image/jpeg"},
+    {"ico", "image/x-icon"},
+    {"svg", "image/svg+xml"},
+    {"webp", "image/webp"},
 };

@@ -52,8 +52,8 @@ private:
     void AcceptConnection();                                         // 侦听并接受连接
     void HandleNewConnection(std::unique_ptr<Socket> client_sock);   // 处理新连接
 
-    std::unique_ptr<Router>  RegisterRouter(std::string& dir);                  // 注册路由
-    std::vector<std::string> GetHtmlFilesRecursively(const std::string& dir);   // 注册路由的辅助函数
+    std::unique_ptr<Router>  RegisterRouter(std::string& dir);                    // 注册路由
+    std::vector<std::string> GetStaticFilesRecursively(const std::string& dir);   // 注册路由的辅助函数
 };
 
 /**
@@ -195,20 +195,20 @@ void Server::HandleNewConnection(std::unique_ptr<Socket> client_sock)
  * 注册路由
  *
  * @details
- *  扫描指定目录下的所有html文件，注册为静态路由
+ *  扫描指定目录下的所有静态文件，注册为静态路由
  *
  * @return 路由对象指针
  */
 std::unique_ptr<Router> Server::RegisterRouter(std::string& dir)
 {
-    std::vector<std::string> html_files = GetHtmlFilesRecursively(dir);
+    std::vector<std::string> static_files = GetStaticFilesRecursively(dir);
     std::unique_ptr<Router>  router(new Router());
-    router->addRoute(HttpMethod::GET, "/", [dir, this]() { return std::unique_ptr<RequestHandler>(new HtmlFileHandler(dir + "/index.html", logger_)); });
-    for (const auto& file_path : html_files)
+    router->addRoute(HttpMethod::GET, "/", [dir, this]() { return std::unique_ptr<RequestHandler>(new StaticFileHandler(dir + "/index.html", logger_)); });
+    for (const auto& file_path : static_files)
     {
         router->addRoute(HttpMethod::GET,
                          file_path.substr(dir.size()),   // 去掉前缀目录
-                         [file_path, this]() { return std::unique_ptr<RequestHandler>(new HtmlFileHandler(file_path, logger_)); });
+                         [file_path, this]() { return std::unique_ptr<RequestHandler>(new StaticFileHandler(file_path, logger_)); });
     }
     return router;
 }
@@ -216,15 +216,15 @@ std::unique_ptr<Router> Server::RegisterRouter(std::string& dir)
 /**
  * 注册路由的辅助函数
  *
- * @details 扫描指定目录及其子目录，获取所有HTML文件的路径
+ * @details 扫描指定目录及其子目录，获取所有静态文件的路径
  *
  * @param dir 目录路径
  *
- * @return HTML文件路径列表
+ * @return 静态文件路径列表
  */
-std::vector<std::string> Server::GetHtmlFilesRecursively(const std::string& dir)
+std::vector<std::string> Server::GetStaticFilesRecursively(const std::string& dir)
 {
-    std::vector<std::string> html_files;
+    std::vector<std::string> static_files;
     std::stack<std::string>  dirs;
     dirs.push(dir);
 
@@ -254,15 +254,12 @@ std::vector<std::string> Server::GetHtmlFilesRecursively(const std::string& dir)
             }
             else if (entry->d_type == DT_REG)
             {
-                if (full_path.size() >= 5 && full_path.substr(full_path.size() - 5) == ".html")
-                {
-                    html_files.push_back(full_path);
-                }
+                static_files.push_back(full_path);
             }
         }
         closedir(dir);
     }
-    return html_files;
+    return static_files;
 }
 
 void Usage(const char* prog)
